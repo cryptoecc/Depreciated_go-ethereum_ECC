@@ -1,173 +1,178 @@
 package plasma
 
 import (
-  "math/big"
-  "sync"
+	"errors"
+	"math/big"
+	"sync"
 
-  "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common"
 )
 
-const (
-  // Block Error
-  invalidOperator = iota
+var (
+	// Block Error
+	invalidOperator = errors.New("sender is not operator")
 
-  // Transaction error
-  invalidSenderSignature
-  spentTransactionOutput
-  mismatchedTransactionAmounts
+	// Transaction error
+	invalidSenderSignature       = errors.New("sender signature is invalid")
+	spentTransactionOutput       = errors.New("transaction output is already spent")
+	mismatchedTransactionAmounts = errors.New("sum of transaction intputs and outputs are not matched")
 )
 
 // BlockChain implements Plasma block chain service
 type BlockChain struct {
-  config              BlockChainConfig
-  blocks              []*Block
-  currentBlock        *Block
-  currentBlockNumber  *big.Int
-  pendingTransactions []*Transaction
+	config              BlockChainConfig
+	blocks              []*Block
+	currentBlock        *Block
+	currentBlockNumber  *big.Int
+	pendingTransactions []*Transaction
 
-  lock sync.RWMutex
+	lock sync.RWMutex
 }
 
 // NewBlockChain creates BlockChain instance
 func NewBlockChain(config BlockChainConfig) *BlockChain {
-  return &BlockChain{
-    config:              config,
-    blocks:              make([]*Block),
-    currentBlock:        &Block{},
-    currentBlockNumber:  big.Int.NewInt(1),
-    pendingTransactions: make([]*Transaction),
-  }
+	return &BlockChain{
+		config:              config,
+		blocks:              []*Block{},
+		currentBlock:        &Block{},
+		currentBlockNumber:  big.NewInt(1),
+		pendingTransactions: []*Transaction{},
+	}
 }
 
 func (bc *BlockChain) getCurrentBlock() *Block {
-  bc.lock.RLock()
-  defer bc.lock.RUnlock()
-  return bc.currentBlock
+	bc.lock.RLock()
+	defer bc.lock.RUnlock()
+	return bc.currentBlock
 }
 
 func (bc *BlockChain) getCurrentBlockNumber() *big.Int {
-  bc.lock.RLock()
-  defer bc.lock.RUnlock()
-  return bc.currentBlockNumber
+	bc.lock.RLock()
+	defer bc.lock.RUnlock()
+	return bc.currentBlockNumber
 }
 
 func (bc *BlockChain) getBlock(blkNum *big.Int) *Block {
-  bc.lock.RLock()
-  defer bc.lock.RUnlock()
-  return bc.blocks[blkNum]
+	bc.lock.RLock()
+	defer bc.lock.RUnlock()
+	return bc.blocks[blkNum.Int64()]
 }
 
 func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) *Transaction {
-  bc.lock.RLock()
-  defer bc.lock.RUnlock()
-  return bc.blocks[blkNum].transactionSet[txIndex]
+	bc.lock.RLock()
+	defer bc.lock.RUnlock()
+	return bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()]
 }
 
 func (bc *BlockChain) applyTransaction(tx *Transaction) error {
-  if err := bc.verifyTransaction(tx); err != nil {
-    return err
-  }
+	if err := bc.verifyTransaction(tx); err != nil {
+		return err
+	}
 
-  bc.markUtxoSpent(tx.blkNum1, tx.txIndex1, tx.oIndex1)
-  bc.markUtxoSpent(tx.blkNum2, tx.txIndex2, tx.oIndex2)
+	bc.markUtxoSpent(tx.blkNum1, tx.txIndex1, tx.oIndex1)
+	bc.markUtxoSpent(tx.blkNum2, tx.txIndex2, tx.oIndex2)
 
-  bc.currentBlock.transactionSet = append(bc.currentBlock.transactionSet, tx)
+	bc.currentBlock.transactionSet = append(bc.currentBlock.transactionSet, tx)
+	return nil
 }
 
 func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
-  outputAmounts := big.Int.NewInt(0).add(tx.amount1, tx.amount2)
-  outputAmounts = big.Int.NewInt(0).add(outputAmounts, tx.fee)
+	outputAmounts := big.NewInt(0).Add(tx.amount1, tx.amount2)
+	outputAmounts = big.NewInt(0).Add(outputAmounts, tx.fee)
 
-  inputAmounts := big.Int.NewInt(0)
+	inputAmounts := big.NewInt(0)
 
-  if tx.blkNum1 != 0 {
-    preTX := bc.getTransaction(tx.blkNum1, tx.txIndex1)
+	if tx.blkNum1.Cmp(big.NewInt(0)) > 0 {
+		preTX := bc.getTransaction(tx.blkNum1, tx.txIndex1)
 
-    if err := verifyTxInput(tx, pre, tx.blkNum1, tx.txIndex1, tx.oIndex1); err != nil {
-      return err
-    }
+		if err := verifyTxInput(tx, preTX, tx.blkNum1, tx.txIndex1, tx.oIndex1); err != nil {
+			return err
+		}
 
-    inputAmount := preTX.amount1
-    inputAmounts = big.Int.NewInt(0).add(inputAmounts, inputAmount)
-  }
+		inputAmount := preTX.amount1
+		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
+	}
 
-  if tx.blkNum2 != 0 {
-    preTX := bc.getTransaction(tx.blkNum2, tx.txIndex2)
+	if tx.blkNum2.Cmp(big.NewInt(0)) > 0 {
 
-    if err := verifyTxInput(tx, pre, tx.blkNum2, tx.txIndex2, tx.oIndex2); err != nil {
-      return err
-    }
+		preTX := bc.getTransaction(tx.blkNum2, tx.txIndex2)
 
-    inputAmount := preTX.amount2
-    inputAmounts = big.Int.NewInt(0).add(inputAmounts, inputAmount)
-  }
+		if err := verifyTxInput(tx, preTX, tx.blkNum2, tx.txIndex2, tx.oIndex2); err != nil {
+			return err
+		}
 
-  if inputAmount != outputAmount {
-    return mismatchedTransactionAmounts
-  }
+		inputAmount := preTX.amount2
+		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
+	}
 
-  return nil
+	if inputAmounts.Cmp(outputAmounts) != 0 {
+		return mismatchedTransactionAmounts
+	}
+
+	return nil
 }
 
 // verify UTXO of preTX can be spent
 func verifyTxInput(tx, preTx *Transaction, blkNum, txIndex, oIndex *big.Int) error {
-  sender := tx.Sender(oIndex)
+	sender := tx.Sender(oIndex)
 
-  var spent bool
-  var owner common.Address
+	var spent bool
+	var owner common.Address
 
-  if oIndex == 0 {
-    spent = tx.spent1
-    owner = tx.newOwner1
-  } else if oIndex == 1 {
-    spent = tx.spent2
-    owner = tx.newOwner2
-  }
+	if oIndex.Cmp(big.NewInt(0)) == 0 {
+		spent = tx.spent1
+		owner = tx.newOwner1
+	} else if oIndex.Cmp(big.NewInt(1)) == 0 {
+		spent = tx.spent2
+		owner = tx.newOwner2
+	}
 
-  if spent {
-    return spentTransactionOutput
-  }
+	if spent {
+		return spentTransactionOutput
+	}
 
-  if sender != owner {
-    return invalidSenderSignature
-  }
+	if sender != owner {
+		return invalidSenderSignature
+	}
 
-  return nil
+	return nil
 
 }
 
 func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
-  bc.lock.RLock()
-  defer bc.lock.RUnlock()
+	bc.lock.RLock()
+	defer bc.lock.RUnlock()
 
-  if blkNum == 0 {
-    return
-  }
+	if blkNum.Cmp(big.NewInt(0)) == 0 {
+		return
+	}
 
-  if oIndex == 0 {
-    bc.blocks[blkNum].transactionSet[txIndex].spent1 = true
-  } else {
-    bc.blocks[blkNum].transactionSet[txIndex].spent2 = true
-  }
+	if oIndex.Cmp(big.NewInt(0)) == 0 {
+		bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()].spent1 = true
+	} else {
+		bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()].spent2 = true
+	}
 }
 
-func (bc *BlockChain) submitBlock(b *Block) {
-  bc.lock.RLock()
-  defer bc.lock.RUnlock()
+func (bc *BlockChain) submitBlock(b *Block) error {
+	bc.lock.RLock()
+	defer bc.lock.RUnlock()
 
-  if bc.config.operatorAddress != b.Sender() {
-    return invalidOperator
-  }
+	if bc.config.operatorAddress != b.Sender() {
+		return invalidOperator
+	}
 
-  bc.blocks[bc.currentBlockNumber] = bc.currentBlock
-  bc.currentBlockNumber = big.Int.NewInt(0).add(bc.currentBlockNumber, 1)
-  bc.currentBlock = &Block{}
+	bc.blocks[bc.currentBlockNumber.Int64()] = bc.currentBlock
+	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
+	bc.currentBlock = &Block{}
+
+	return nil
 }
 
 // read transaction with hash of `txHash` from root chain
 func (bc *BlockChain) submitDeposit(txHash common.Hash) {
-  bc.lock.RLock()
-  defer bc.lock.RUnlock()
+	bc.lock.RLock()
+	defer bc.lock.RUnlock()
 
-  tx := txHash
+	tx := txHash
 }
