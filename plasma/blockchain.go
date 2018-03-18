@@ -165,7 +165,7 @@ func (bc *BlockChain) submitBlock(b *Block) error {
 	if sender, err := b.Sender(); err != nil {
 		return err
 	} else {
-		if bc.config.operatorAddress != sender {
+		if bc.config.OperatorAddress != sender {
 			return invalidOperator
 		}
 	}
