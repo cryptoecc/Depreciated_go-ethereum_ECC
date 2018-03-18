@@ -143,6 +143,12 @@ var (
 		utils.WhisperMaxMessageSizeFlag,
 		utils.WhisperMinPOWFlag,
 	}
+
+	plasmaFlags = []cli.Flag{
+		utils.PlasmaEnabledFlag,
+		utils.PlasmaOperatorFlag,
+		utils.PlasmaAddressFlag,
+	}
 )
 
 func init() {
@@ -183,6 +189,7 @@ func init() {
 	app.Flags = append(app.Flags, consoleFlags...)
 	app.Flags = append(app.Flags, debug.Flags...)
 	app.Flags = append(app.Flags, whisperFlags...)
+	app.Flags = append(app.Flags, plasmaFlags...)
 
 	app.Before = func(ctx *cli.Context) error {
 		runtime.GOMAXPROCS(runtime.NumCPU())

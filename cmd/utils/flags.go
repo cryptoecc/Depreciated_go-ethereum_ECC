@@ -55,6 +55,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/plasma"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv5"
 	"gopkg.in/urfave/cli.v1"
 )
@@ -532,6 +533,20 @@ var (
 		Usage: "Minimum POW accepted",
 		Value: whisper.DefaultMinimumPoW,
 	}
+
+	// Plasma Flags
+	PlasmaEnabledFlag = cli.BoolFlag{
+		Name:  "pls",
+		Usage: "Enable Plasma",
+	}
+	PlasmaOperatorFlag = cli.BoolFlag{
+		Name:  "pls.operator",
+		Usage: "Run operator node",
+	}
+	PlasmaAddressFlag = cli.StringFlag{
+		Name:  "pls.contractAddress",
+		Usage: "Address of plasma contract",
+	}
 )
 
 // MakeDataDir retrieves the currently requested data directory, terminating
@@ -885,6 +900,8 @@ func SetNodeConfig(ctx *cli.Context, cfg *node.Config) {
 		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "testnet")
 	case ctx.GlobalBool(RinkebyFlag.Name):
 		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "rinkeby")
+	case ctx.GlobalBool(PlasmaEnabledFlag.Name):
+		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "plasma-root")
 	}
 
 	if ctx.GlobalIsSet(KeyStoreDirFlag.Name) {
@@ -1009,6 +1026,17 @@ func SetShhConfig(ctx *cli.Context, stack *node.Node, cfg *whisper.Config) {
 	}
 }
 
+// SetPlsConfig applies pls-related command line flags to the config.
+func SetPlsConfig(ctx *cli.Context, stack *node.Node, cfg *plasma.Config) {
+	if ctx.GlobalBool(PlasmaAddressFlag.Name) {
+		cfg.ContractAddress = common.StringToAddress(ctx.GlobalString(PlasmaAddressFlag.Name))
+	}
+
+	if ctx.GlobalBool(PlasmaOperatorFlag.Name) {
+		cfg.OperatorPrivateKey = params.PlasmaOperatorPrivateKey
+	}
+}
+
 // SetEthConfig applies eth-related command line flags to the config.
 func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 	// Avoid conflicting network flags
@@ -1106,6 +1134,22 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 		if !ctx.GlobalIsSet(GasPriceFlag.Name) {
 			cfg.GasPrice = big.NewInt(1)
 		}
+	case ctx.GlobalBool(PlasmaEnabledFlag.Name):
+		operator, err := ks.ImportECDSA(params.PlasmaOperatorPrivateKey, "")
+
+		if err != nil {
+			Fatalf("Failed to load operator key: %v", err)
+		}
+
+		if err := ks.Unlock(operator, ""); err != nil {
+			Fatalf("Failed to unlock operator account: %v", err)
+		}
+		log.Info("Using operator account", "address", operator.Address)
+
+		cfg.Genesis = core.PlasmaDeveloperGenesisBlock(operator.Address)
+		if !ctx.GlobalIsSet(GasPriceFlag.Name) {
+			cfg.GasPrice = big.NewInt(1)
+		}
 	}
 	// TODO(fjl): move trie cache generations into config
 	if gen := ctx.GlobalInt(TrieCacheGenFlag.Name); gen > 0 {
@@ -1155,6 +1199,15 @@ func RegisterShhService(stack *node.Node, cfg *whisper.Config) {
 		return whisper.New(cfg), nil
 	}); err != nil {
 		Fatalf("Failed to register the Whisper service: %v", err)
+	}
+}
+
+// RegisterPlsService configures Plasma full node and adds it to the given node.
+func RegisterPlsService(stack *node.Node, cfg *plasma.Config) {
+	if err := stack.Register(func(n *node.ServiceContext) (node.Service, error) {
+		return plasma.New(cfg), nil
+	}); err != nil {
+		Fatalf("Failed to register the Plasma service: %v", err)
 	}
 }
 
