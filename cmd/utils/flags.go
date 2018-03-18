@@ -1135,10 +1135,26 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 			cfg.GasPrice = big.NewInt(1)
 		}
 	case ctx.GlobalBool(PlasmaEnabledFlag.Name):
-		operator, err := ks.ImportECDSA(params.PlasmaOperatorPrivateKey, "")
+		var (
+			operator accounts.Account
+			err      error
+		)
 
-		if err != nil {
-			Fatalf("Failed to load operator key: %v", err)
+		operatorAddress := crypto.PubkeyToAddress(params.PlasmaOperatorPrivateKey.PublicKey)
+
+		if !ks.HasAddress(operatorAddress) {
+			operator, err = ks.ImportECDSA(params.PlasmaOperatorPrivateKey, "")
+
+			if err != nil {
+				Fatalf("Failed to load operator key: %v", err)
+			}
+		} else {
+			for _, account := range ks.Accounts() {
+				if account.Address == operatorAddress {
+					operator = account
+					break
+				}
+			}
 		}
 
 		if err := ks.Unlock(operator, ""); err != nil {
