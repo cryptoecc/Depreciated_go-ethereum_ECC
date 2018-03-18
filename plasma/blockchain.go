@@ -114,7 +114,11 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 
 // verify UTXO of preTX can be spent
 func verifyTxInput(tx, preTx *Transaction, blkNum, txIndex, oIndex *big.Int) error {
-	sender := tx.Sender(oIndex)
+	sender, err := tx.Sender(oIndex)
+
+	if err != nil {
+		return err
+	}
 
 	var spent bool
 	var owner common.Address
@@ -158,8 +162,12 @@ func (bc *BlockChain) submitBlock(b *Block) error {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
-	if bc.config.operatorAddress != b.Sender() {
-		return invalidOperator
+	if sender, err := b.Sender(); err != nil {
+		return err
+	} else {
+		if bc.config.operatorAddress != sender {
+			return invalidOperator
+		}
 	}
 
 	bc.blocks[bc.currentBlockNumber.Int64()] = bc.currentBlock
@@ -174,5 +182,5 @@ func (bc *BlockChain) submitDeposit(txHash common.Hash) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
-	tx := txHash
+	// tx := txHash
 }
