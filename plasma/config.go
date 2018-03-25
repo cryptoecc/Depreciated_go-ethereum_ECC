@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // Config represents the configuration state of a plasma node.
@@ -25,4 +26,10 @@ type BlockChainConfig struct {
 
 	DataDir string
 	OnDisk  bool // disk or memory
+}
+
+var DefaultConfig = Config{
+	ContractAddress:    common.StringToAddress("0x0"),
+	OperatorAddress:    params.PlasmaOperatorAddress,
+	OperatorPrivateKey: params.PlasmaOperatorPrivateKey,
 }
