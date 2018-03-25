@@ -174,6 +174,10 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 		utils.RegisterShhService(stack, &cfg.Shh)
 	}
 
+	if ctx.GlobalBool(utils.PlasmaEnabledFlag.Name) {
+		utils.RegisterPlsService(stack, &cfg.Pls)
+	}
+
 	// Add the Ethereum Stats daemon if requested.
 	if cfg.Ethstats.URL != "" {
 		utils.RegisterEthStatsService(stack, cfg.Ethstats.URL)
