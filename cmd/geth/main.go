@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/plasma"
 	"gopkg.in/urfave/cli.v1"
 )
 
@@ -255,6 +256,16 @@ func startNode(ctx *cli.Context, stack *node.Node) {
 			utils.Fatalf("Failed to attach to self: %v", err)
 		}
 		stateReader := ethclient.NewClient(rpcClient)
+
+		// register rpcClient to Plasma service
+		if ctx.GlobalBool(utils.PlasmaEnabledFlag.Name) {
+			var pls *plasma.Plasma
+			if err := stack.Service(&pls); err != nil {
+				utils.Fatalf("Plasma is not running: %v", err)
+			}
+
+			pls.RegisterRpcClient(rpcClient)
+		}
 
 		// Open any wallets already attached
 		for _, wallet := range stack.AccountManager().Wallets() {

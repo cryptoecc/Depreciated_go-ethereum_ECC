@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -18,6 +19,9 @@ type Config struct {
 
 	// If this node is operator, specify the private key
 	OperatorPrivateKey *ecdsa.PrivateKey
+
+	// Plasma operator node
+	OperatorNode *discover.Node
 }
 
 // BlockChainConfig represents BlockChain specific configuration.
