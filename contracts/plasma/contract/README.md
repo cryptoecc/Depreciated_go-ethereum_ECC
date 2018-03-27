@@ -1,3 +1,0 @@
-- RootChain.sol: Plasma smart contract
-- rootchain.go: auto-generated golang binding by [`abigen`](https://github.com/ethereum/go-ethereum#executables)
-  - `abigen --sol contracts/plasma/contract/RootChain.sol --pkg contract --out contracts/plasma/contract/rootchain.go`
