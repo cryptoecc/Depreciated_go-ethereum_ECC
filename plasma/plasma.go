@@ -1,9 +1,13 @@
 package plasma
 
 import (
+	"context"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/contracts/plasma/contract"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -15,13 +19,14 @@ import (
 type Plasma struct {
 	config   *Config
 	protocol p2p.Protocol
+	context  context.Context
 
 	// Channels
 	quit   chan bool
 	client chan *rpc.Client
 
 	// Handlers
-	rpcClient  *rpc.Client
+	backend    *ethclient.Client // actual rpc backend
 	blockchain *BlockChain
 	downloader *Downloader
 
@@ -39,7 +44,8 @@ func New(config *Config) *Plasma {
 	}
 
 	pls := &Plasma{
-		config: config,
+		config:  config,
+		context: context.Background(),
 	}
 
 	pls.client = make(chan *rpc.Client)
@@ -125,7 +131,7 @@ func (pls *Plasma) getPeers() []*discover.Node {
 func (pls *Plasma) run() {
 	select {
 	case rpcClient := <-pls.client:
-		pls.rpcClient = rpcClient
+		pls.backend = ethclient.NewClient(rpcClient)
 		log.Info("RPC Client attached")
 	case <-pls.quit:
 		return
@@ -154,6 +160,30 @@ loop:
 
 // TODO: Load contract instnace. If operator, deploy plasma contract.
 func (pls *Plasma) initialize() error {
+	// deploy plasma contract
+	// TODO: check if contract is deployed
+
+	deployed, err := pls.checkContractDepoyed()
+
+	if err != nil {
+		return err
+	}
+
+	if deployed {
+		log.Info("Plasma contract is already deployed", "address", pls.config.ContractAddress)
+	} else {
+		transactOpts := bind.NewKeyedTransactor(pls.config.OperatorPrivateKey)
+
+		addr, _, _, err := contract.DeployRootChain(transactOpts, pls.backend)
+
+		if err != nil {
+			return err
+		}
+
+		log.Info("Plasma contract deployed", "txhash", addr)
+		// TODO: fetch deployed contract address
+	}
+
 	return nil
 }
 
@@ -161,4 +191,14 @@ func (pls *Plasma) initialize() error {
 // If new block is submitted to the contract, request raw block data to operator
 func (pls *Plasma) checkNextBlock() error {
 	return nil
+}
+
+func (pls *Plasma) checkContractDepoyed() (bool, error) {
+	// nil to recent block
+	code, err := pls.backend.CodeAt(pls.context, pls.config.ContractAddress, nil)
+	if err != nil {
+		return false, err
+	} else {
+		return len(code) > 0, nil
+	}
 }
