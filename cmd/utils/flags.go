@@ -1032,12 +1032,18 @@ func SetShhConfig(ctx *cli.Context, stack *node.Node, cfg *whisper.Config) {
 
 // SetPlsConfig applies pls-related command line flags to the config.
 func SetPlsConfig(ctx *cli.Context, stack *node.Node, cfg *plasma.Config) {
+	cfg.ContractAddress = params.PlasmaContractAddress
 	if ctx.GlobalBool(PlasmaAddressFlag.Name) {
 		cfg.ContractAddress = common.StringToAddress(ctx.GlobalString(PlasmaAddressFlag.Name))
 	}
 
 	if ctx.GlobalBool(PlasmaOperatorFlag.Name) {
-		cfg.OperatorPrivateKey, _ = crypto.HexToECDSA(ctx.GlobalString(PlasmaOperatorPrivKeyFlag.Name))
+		operatorPrivKey, _ := crypto.HexToECDSA(ctx.GlobalString(PlasmaOperatorPrivKeyFlag.Name))
+		if address := crypto.PubkeyToAddress(operatorPrivKey.PublicKey); address != params.PlasmaOperatorAddress {
+			Fatalf("Faild to convert operator account: %v is not operator %v", address.Hex(), params.PlasmaOperatorAddress.Hex())
+		}
+
+		cfg.OperatorPrivateKey = operatorPrivKey
 	}
 }
 
@@ -1147,12 +1153,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 			)
 
 			operatorPrivKey, _ := crypto.HexToECDSA(ctx.GlobalString(PlasmaOperatorPrivKeyFlag.Name))
+			operatorAddress := crypto.PubkeyToAddress(operatorPrivKey.PublicKey)
 
-			if address := crypto.PubkeyToAddress(operatorPrivKey.PublicKey); address != params.PlasmaOperatorAddress {
-				Fatalf("Faild to convert operator account: %v is not operator %v", address.Hex(), params.PlasmaOperatorAddress.Hex())
-			}
-
-			if !ks.HasAddress(params.PlasmaOperatorAddress) {
+			if !ks.HasAddress(operatorAddress) {
 				operator, err = ks.ImportECDSA(operatorPrivKey, "")
 
 				if err != nil {
@@ -1160,7 +1163,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 				}
 			} else {
 				for _, account := range ks.Accounts() {
-					if account.Address == params.PlasmaOperatorAddress {
+					if account.Address == operatorAddress {
 						operator = account
 						break
 					}

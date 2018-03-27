@@ -110,6 +110,7 @@ var (
 	TestRules       = TestChainConfig.Rules(new(big.Int))
 
 	PlasmaOperatorAddress = common.HexToAddress("0x4c910ce23172578135467e20bc2cf03e93b0d250")
+	PlasmaContractAddress = common.HexToAddress("0x4Cf98814898Cd44fd86bBCA9D82eE8B7D61b19A1")
 )
 
 // ChainConfig is the core config which determines the blockchain settings.
