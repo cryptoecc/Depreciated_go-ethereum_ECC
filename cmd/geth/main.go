@@ -148,6 +148,7 @@ var (
 	plasmaFlags = []cli.Flag{
 		utils.PlasmaEnabledFlag,
 		utils.PlasmaOperatorFlag,
+		utils.PlasmaOperatorPrivKeyFlag,
 		utils.PlasmaAddressFlag,
 	}
 )

@@ -33,7 +33,6 @@ type BlockChainConfig struct {
 }
 
 var DefaultConfig = Config{
-	ContractAddress:    common.StringToAddress("0x0"),
-	OperatorAddress:    params.PlasmaOperatorAddress,
-	OperatorPrivateKey: params.PlasmaOperatorPrivateKey,
+	ContractAddress: common.StringToAddress("0x0"),
+	OperatorAddress: params.PlasmaOperatorAddress,
 }

@@ -543,6 +543,10 @@ var (
 		Name:  "pls.operator",
 		Usage: "Run operator node",
 	}
+	PlasmaOperatorPrivKeyFlag = cli.StringFlag{
+		Name:  "pls.operatorPrivKey",
+		Usage: "Provide private operator key for 0x4c910ce23172578135467e20bc2cf03e93b0d250",
+	}
 	PlasmaAddressFlag = cli.StringFlag{
 		Name:  "pls.contractAddress",
 		Usage: "Address of plasma contract",
@@ -1033,7 +1037,7 @@ func SetPlsConfig(ctx *cli.Context, stack *node.Node, cfg *plasma.Config) {
 	}
 
 	if ctx.GlobalBool(PlasmaOperatorFlag.Name) {
-		cfg.OperatorPrivateKey = params.PlasmaOperatorPrivateKey
+		cfg.OperatorPrivateKey, _ = crypto.HexToECDSA(ctx.GlobalString(PlasmaOperatorPrivKeyFlag.Name))
 	}
 }
 
@@ -1135,34 +1139,41 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 			cfg.GasPrice = big.NewInt(1)
 		}
 	case ctx.GlobalBool(PlasmaEnabledFlag.Name):
-		var (
-			operator accounts.Account
-			err      error
-		)
+		// import operator private key if needed
+		if ctx.GlobalBool(PlasmaOperatorFlag.Name) {
+			var (
+				operator accounts.Account
+				err      error
+			)
 
-		operatorAddress := crypto.PubkeyToAddress(params.PlasmaOperatorPrivateKey.PublicKey)
+			operatorPrivKey, _ := crypto.HexToECDSA(ctx.GlobalString(PlasmaOperatorPrivKeyFlag.Name))
 
-		if !ks.HasAddress(operatorAddress) {
-			operator, err = ks.ImportECDSA(params.PlasmaOperatorPrivateKey, "")
-
-			if err != nil {
-				Fatalf("Failed to load operator key: %v", err)
+			if address := crypto.PubkeyToAddress(operatorPrivKey.PublicKey); address != params.PlasmaOperatorAddress {
+				Fatalf("Faild to convert operator account: %v is not operator %v", address.Hex(), params.PlasmaOperatorAddress.Hex())
 			}
-		} else {
-			for _, account := range ks.Accounts() {
-				if account.Address == operatorAddress {
-					operator = account
-					break
+
+			if !ks.HasAddress(params.PlasmaOperatorAddress) {
+				operator, err = ks.ImportECDSA(operatorPrivKey, "")
+
+				if err != nil {
+					Fatalf("Failed to load operator key: %v", err)
+				}
+			} else {
+				for _, account := range ks.Accounts() {
+					if account.Address == params.PlasmaOperatorAddress {
+						operator = account
+						break
+					}
 				}
 			}
+
+			if err := ks.Unlock(operator, ""); err != nil {
+				Fatalf("Failed to unlock operator account: %v", err)
+			}
+			log.Info("Using operator account", "address", operator.Address)
 		}
 
-		if err := ks.Unlock(operator, ""); err != nil {
-			Fatalf("Failed to unlock operator account: %v", err)
-		}
-		log.Info("Using operator account", "address", operator.Address)
-
-		cfg.Genesis = core.PlasmaDeveloperGenesisBlock(operator.Address)
+		cfg.Genesis = core.PlasmaDeveloperGenesisBlock(params.PlasmaOperatorAddress)
 		if !ctx.GlobalIsSet(GasPriceFlag.Name) {
 			cfg.GasPrice = big.NewInt(1)
 		}
