@@ -160,9 +160,7 @@ loop:
 
 // TODO: Load contract instnace. If operator, deploy plasma contract.
 func (pls *Plasma) initialize() error {
-	// deploy plasma contract
-	// TODO: check if contract is deployed
-
+	// deploy or load plasma contract
 	deployed, err := pls.checkContractDepoyed()
 
 	if err != nil {
@@ -170,18 +168,26 @@ func (pls *Plasma) initialize() error {
 	}
 
 	if deployed {
+		rootchain, err := contract.NewRootChain(pls.config.ContractAddress, pls.backend)
+		if err != nil {
+			return err
+		}
+
+		pls.rootchain = rootchain
+
 		log.Info("Plasma contract is already deployed", "address", pls.config.ContractAddress)
 	} else {
 		transactOpts := bind.NewKeyedTransactor(pls.config.OperatorPrivateKey)
 
-		addr, _, _, err := contract.DeployRootChain(transactOpts, pls.backend)
+		address, tx, rootchain, err := contract.DeployRootChain(transactOpts, pls.backend)
 
 		if err != nil {
 			return err
 		}
 
-		log.Info("Plasma contract deployed", "txhash", addr)
-		// TODO: fetch deployed contract address
+		pls.config.ContractAddress = address
+		pls.rootchain = rootchain
+		log.Info("Plasma contract deployed", "txhash", tx.Hash(), "contract", address)
 	}
 
 	return nil
