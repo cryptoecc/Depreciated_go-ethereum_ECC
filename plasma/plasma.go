@@ -2,6 +2,7 @@ package plasma
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -151,13 +152,13 @@ func (pls *Plasma) run() {
 	select {
 	case backend := <-pls.backendChan:
 		pls.backend = backend
-		log.Info("Ethereum jsonrpc endpoint attached to Plasma")
+		log.Info("Ethereum jsonrpc backend attached")
 	case <-pls.quit:
 		return
 	}
 
 	if err := pls.initialize(); err != nil {
-		log.Info("Plasma failed to initialize: %v", err)
+		log.Info("Plasma failed to initialize", err)
 	}
 
 	log.Info("Plasma initialized and running")
@@ -171,13 +172,13 @@ loop:
 
 		default:
 			if err := pls.checkNextBlock(); err != nil {
-				log.Info("Plasma failed to fetch next block: %v", err)
+				log.Info("Plasma failed to fetch next block", err)
 			}
 		}
 	}
 }
 
-// TODO: Load contract instnace. If operator, deploy plasma contract.
+// TODO: If operator, deploy or load contract. If not operator, load contract
 func (pls *Plasma) initialize() error {
 	// deploy or load plasma contract
 	deployed, err := pls.checkContractDepoyed()
@@ -196,6 +197,10 @@ func (pls *Plasma) initialize() error {
 
 		log.Info("Plasma contract is already deployed", "address", pls.config.ContractAddress)
 	} else {
+		if !pls.isOperator() {
+			return fmt.Errorf("Plasma contract is not deployed yet at", pls.config.ContractAddress)
+		}
+
 		transactOpts := bind.NewKeyedTransactor(pls.config.OperatorPrivateKey)
 
 		address, tx, rootchain, err := contract.DeployRootChain(transactOpts, pls.backend)
@@ -206,7 +211,7 @@ func (pls *Plasma) initialize() error {
 
 		pls.config.ContractAddress = address
 		pls.rootchain = rootchain
-		log.Info("Plasma contract deployed", "txhash", tx.Hash(), "contract", address)
+		log.Info("Plasma contract deployed", "hash", tx.Hash(), "contract", address)
 	}
 
 	return nil
