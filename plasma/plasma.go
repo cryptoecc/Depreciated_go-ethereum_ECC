@@ -227,3 +227,9 @@ func (pls *Plasma) checkContractDepoyed() (bool, error) {
 		return len(code) > 0, nil
 	}
 }
+
+func (pls *Plasma) isOperator() bool {
+	operatorAddress := crypto.PubkeyToAddress(pls.config.OperatorPrivateKey.PublicKey)
+
+	return operatorAddress == params.PlasmaOperatorAddress
+}
