@@ -3,7 +3,6 @@ package plasma
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -219,9 +218,6 @@ func (pls *Plasma) initialize() error {
 		return err
 	}
 
-// TODO: read next block from Plasma contract
-// If new block is submitted to the contract, request raw block data to operator
-func (pls *Plasma) checkNextBlock() error {
 	return nil
 }
 

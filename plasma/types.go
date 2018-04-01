@@ -1,6 +1,7 @@
 package plasma
 
 import (
+	"crypto/ecdsa"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -20,8 +21,26 @@ func NewBlock() *Block {
 }
 
 // Hash returns sha3 hash of Block
-// TODO: implement this
 func (b *Block) Hash() []byte {
+	txHashes := make([][]byte, len(b.transactionSet))
+
+	for _, tx := range b.transactionSet {
+		txHashes = append(txHashes, tx.Hash())
+	}
+
+	h := sha3.NewKeccak256()
+	rlp.Encode(h, txHashes)
+	return h.Sum(nil)
+}
+
+func (b *Block) Sign(privKey *ecdsa.PrivateKey) error {
+	sig, err := crypto.Sign(b.Hash(), privKey)
+
+	if err != nil {
+		return err
+	}
+
+	b.sig = sig
 	return nil
 }
 
@@ -30,9 +49,9 @@ func (b *Block) Sender() (common.Address, error) {
 	return getSender(b.Hash(), b.sig)
 }
 
-// Transaction implements Plasma chain transaction
-type Transaction struct {
-	// General TX Fields
+// unsignTransaction only contains requierd fields for hash function
+// TODO: change big.Int to uint64 to reduce txData size
+type txData struct {
 	blkNum1   *big.Int
 	txIndex1  *big.Int
 	oIndex1   *big.Int
@@ -44,8 +63,13 @@ type Transaction struct {
 	newOwner2 *common.Address
 	amount2   *big.Int
 	fee       *big.Int
-	sig1      []byte
-	sig2      []byte
+}
+
+// Transaction implements Plasma chain transaction
+type Transaction struct {
+	data txData
+	sig1 []byte
+	sig2 []byte
 
 	// whether TX output is spent or not
 	spent1 bool
@@ -54,13 +78,22 @@ type Transaction struct {
 
 // NewTransaction creates Transaction instance
 func NewTransaction(blkNum1, txIndex1, oIndex1, blkNum2, txIndex2, oIndex2 *big.Int, newOwner1 *common.Address, amount1 *big.Int, newOwner2 *common.Address, amount2, fee *big.Int) *Transaction {
-	return &Transaction{blkNum1, txIndex1, oIndex1, blkNum2, txIndex2, oIndex2, newOwner1, amount1, newOwner2, amount2, fee, nil, nil, false, false}
+	data := txData{
+		blkNum1, txIndex1, oIndex1,
+		blkNum2, txIndex2, oIndex2,
+		newOwner1, amount1,
+		newOwner2, amount2,
+		fee,
+	}
+
+	return &Transaction{data, nil, nil, false, false}
 }
 
 // Hash returns sha3 hash of Transaction
-// TODO: implement this
 func (tx *Transaction) Hash() []byte {
-	return nil
+	h := sha3.NewKeccak256()
+	rlp.Encode(h, tx.data)
+	return h.Sum(nil)
 }
 
 // Sender returns owner address of TX input
@@ -75,6 +108,28 @@ func (tx *Transaction) Sender(oIndex *big.Int) (common.Address, error) {
 	}
 
 	return getSender(hash, sig)
+}
+
+func (tx *Transaction) Sign1(privKey *ecdsa.PrivateKey) error {
+	sig, err := crypto.Sign(tx.Hash(), privKey)
+
+	if err != nil {
+		return err
+	}
+
+	tx.sig1 = sig
+	return nil
+}
+
+func (tx *Transaction) Sign2(privKey *ecdsa.PrivateKey) error {
+	sig, err := crypto.Sign(tx.Hash(), privKey)
+
+	if err != nil {
+		return err
+	}
+
+	tx.sig2 = sig
+	return nil
 }
 
 func getSender(hash, sig []byte) (common.Address, error) {
@@ -93,4 +148,9 @@ func rlpHash(x interface{}) (h common.Hash) {
 	rlp.Encode(hw, x)
 	hw.Sum(h[:0])
 	return h
+}
+
+func sign(hash []byte, privKey *ecdsa.PrivateKey) (sig []byte, err error) {
+	sig, err = crypto.Sign(hash, privKey)
+	return
 }

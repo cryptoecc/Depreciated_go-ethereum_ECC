@@ -23,8 +23,8 @@ var (
 type BlockChain struct {
 	config              *Config
 	blocks              []*Block
-	currentBlock        *Block
-	currentBlockNumber  *big.Int
+	currentBlock        *Block   // block not mined yet
+	currentBlockNumber  *big.Int // block number of currentBlock
 	pendingTransactions []*Transaction
 
 	// Channels
@@ -38,7 +38,7 @@ type BlockChain struct {
 func NewBlockChain(config *Config) *BlockChain {
 	return &BlockChain{
 		config:              config,
-		blocks:              []*Block{},
+		blocks:              []*Block{nil}, // no block with block number 0
 		currentBlock:        &Block{},
 		currentBlockNumber:  big.NewInt(1),
 		pendingTransactions: []*Transaction{},
@@ -73,42 +73,44 @@ func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) *Transaction {
 
 func (bc *BlockChain) applyTransaction(tx *Transaction) error {
 	if err := bc.verifyTransaction(tx); err != nil {
+		log.Info("[Plasma Chain] Failed to verify transaction", "hash", tx.Hash(), "error", err)
+
 		return err
 	}
 
-	bc.markUtxoSpent(tx.blkNum1, tx.txIndex1, tx.oIndex1)
-	bc.markUtxoSpent(tx.blkNum2, tx.txIndex2, tx.oIndex2)
+	bc.markUtxoSpent(tx.data.blkNum1, tx.data.txIndex1, tx.data.oIndex1)
+	bc.markUtxoSpent(tx.data.blkNum2, tx.data.txIndex2, tx.data.oIndex2)
 
 	bc.currentBlock.transactionSet = append(bc.currentBlock.transactionSet, tx)
 	return nil
 }
 
 func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
-	outputAmounts := big.NewInt(0).Add(tx.amount1, tx.amount2)
-	outputAmounts = big.NewInt(0).Add(outputAmounts, tx.fee)
+	outputAmounts := big.NewInt(0).Add(tx.data.amount1, tx.data.amount2)
+	outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.fee)
 
 	inputAmounts := big.NewInt(0)
 
-	if tx.blkNum1.Cmp(big.NewInt(0)) > 0 {
-		preTX := bc.getTransaction(tx.blkNum1, tx.txIndex1)
+	if tx.data.blkNum1.Cmp(big.NewInt(0)) > 0 {
+		preTX := bc.getTransaction(tx.data.blkNum1, tx.data.txIndex1)
 
-		if err := verifyTxInput(tx, preTX, tx.blkNum1, tx.txIndex1, tx.oIndex1); err != nil {
+		if err := verifyTxInput(tx, preTX, tx.data.blkNum1, tx.data.txIndex1, tx.data.oIndex1); err != nil {
 			return err
 		}
 
-		inputAmount := preTX.amount1
+		inputAmount := preTX.data.amount1
 		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
 	}
 
-	if tx.blkNum2.Cmp(big.NewInt(0)) > 0 {
+	if tx.data.blkNum2.Cmp(big.NewInt(0)) > 0 {
 
-		preTX := bc.getTransaction(tx.blkNum2, tx.txIndex2)
+		preTX := bc.getTransaction(tx.data.blkNum2, tx.data.txIndex2)
 
-		if err := verifyTxInput(tx, preTX, tx.blkNum2, tx.txIndex2, tx.oIndex2); err != nil {
+		if err := verifyTxInput(tx, preTX, tx.data.blkNum2, tx.data.txIndex2, tx.data.oIndex2); err != nil {
 			return err
 		}
 
-		inputAmount := preTX.amount2
+		inputAmount := preTX.data.amount2
 		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
 	}
 
@@ -132,10 +134,10 @@ func verifyTxInput(tx, preTx *Transaction, blkNum, txIndex, oIndex *big.Int) err
 
 	if oIndex.Cmp(big.NewInt(0)) == 0 {
 		spent = tx.spent1
-		owner = tx.newOwner1
+		owner = tx.data.newOwner1
 	} else if oIndex.Cmp(big.NewInt(1)) == 0 {
 		spent = tx.spent2
-		owner = tx.newOwner2
+		owner = tx.data.newOwner2
 	}
 
 	if spent {
@@ -177,24 +179,16 @@ func (bc *BlockChain) submitBlock(b *Block) error {
 		}
 	}
 
-	bc.blocks[bc.currentBlockNumber.Int64()] = bc.currentBlock
+	bc.blocks = append(bc.blocks, bc.currentBlock)
 	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
 	bc.currentBlock = &Block{}
 
 	return nil
 }
 
-// read transaction with hash of `txHash` from root chain
-func (bc *BlockChain) submitDeposit(txHash common.Hash) error {
+func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) error {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-
-	return nil
-}
-
-func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) error {
-	bc.lock.RLock()
-	defer bc.lock.RUnlock()
 
 	tx := NewTransaction(big0, big0, big0, big0, big0, big0, depositor, amount, &nullAddress, big0, big0)
 	transactionSet := []*Transaction{tx}
