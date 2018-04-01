@@ -1,6 +1,7 @@
 package plasma
 
 import (
+	"crypto/ecdsa"
 	"errors"
 	"math/big"
 	"sync"
@@ -167,6 +168,7 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 	}
 }
 
+// submitBlock seals current block
 func (bc *BlockChain) submitBlock(b *Block) error {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
@@ -184,6 +186,12 @@ func (bc *BlockChain) submitBlock(b *Block) error {
 	bc.currentBlock = &Block{}
 
 	return nil
+}
+
+func (bc *BlockChain) submitCurrentBlock(privKey *ecdsa.PrivateKey) error {
+	bc.currentBlock.Sign(privKey)
+
+	return bc.submitBlock(bc.currentBlock)
 }
 
 func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) error {
@@ -204,7 +212,8 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) err
 	return nil
 }
 
-func (bc *BlockChain) listenNewBlock(f func(blk *Block) error) error {
+// TODO: use event.Feed if needed.
+func (bc *BlockChain) addNewBlockListener(f func(blk *Block) error) error {
 	for {
 		select {
 		case blk := <-bc.newBlock:

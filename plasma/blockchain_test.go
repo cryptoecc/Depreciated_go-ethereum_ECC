@@ -24,23 +24,42 @@ func TestMain(t *testing.T) {
 		t.Fatal("Failed to create new deposit", err)
 	}
 
-	// apply
-	tx := NewTransaction(
+	// send transaction 1
+	tx1 := NewTransaction(
 		big1, big0, big0,
 		big0, big0, big0,
 		owner, big.NewInt(900),
 		&nullAddress, big0,
 		big.NewInt(100))
 
-	tx.Sign1(ownerKey)
+	tx1.Sign1(ownerKey)
 
-	if err := bc.applyTransaction(tx); err != nil {
-		t.Fatal("Failed to apply transact", "error", err)
+	if err := bc.applyTransaction(tx1); err != nil {
+		t.Fatal("Failed to apply transact 1", "error", err)
+	}
+
+	// submit block
+	bc.submitCurrentBlock(bc.config.OperatorPrivateKey)
+
+	// send transaction 2
+	tx2 := NewTransaction(
+		big.NewInt(2), big0, big0,
+		big0, big0, big0,
+		owner, big.NewInt(800),
+		&nullAddress, big0,
+		big.NewInt(100))
+
+	tx2.Sign1(ownerKey)
+
+	if err := bc.applyTransaction(tx2); err != nil {
+		t.Fatal("Failed to apply transact 2", "error", err)
 	}
 }
 
 func initialize(t *testing.T) {
-	bc = NewBlockChain(&DefaultConfig)
+	config := DefaultConfig
+	config.OperatorPrivateKey, _ = crypto.HexToECDSA("9cd69f009ac86203e54ec50e3686de95ff6126d3b30a19f926a0fe9323c17181")
+	bc = NewBlockChain(&config)
 
 	keyStrs := []string{
 		"abf82ff96b463e9d82b83cb9bb450fe87e6166d4db6d7021d0c71d7e960d5abe",

@@ -218,6 +218,11 @@ func (pls *Plasma) initialize() error {
 		return err
 	}
 
+	err = pls.listenNewBlock()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -232,12 +237,15 @@ func (pls *Plasma) checkContractDepoyed() (bool, error) {
 }
 
 func (pls *Plasma) isOperator() bool {
-	operatorAddress := crypto.PubkeyToAddress(pls.config.OperatorPrivateKey.PublicKey)
+	if pls.config.OperatorPrivateKey == nil {
+		return false
+	}
 
-	return operatorAddress == params.PlasmaOperatorAddress
+	return params.PlasmaOperatorAddress == crypto.PubkeyToAddress(pls.config.OperatorPrivateKey.PublicKey)
 }
 
 // watch Deposit event
+// TODO: only operator need to listen it.
 func (pls *Plasma) listenDeposit() error {
 	filterer, err := contract.NewRootChainFilterer(pls.config.ContractAddress, pls.backend)
 
@@ -245,7 +253,7 @@ func (pls *Plasma) listenDeposit() error {
 		return err
 	}
 
-	// TODO: If plasma node had stopped previously, read event from last parent block to stoped
+	// TODO: If plasma node had stopped previously, read event from last parent block when node stopped
 	watchOpts := bind.WatchOpts{
 		Context: pls.context,
 		Start:   nil,
@@ -282,4 +290,13 @@ func (pls *Plasma) listenDeposit() error {
 	}()
 
 	return nil
+}
+
+// listenNewBlock send new block to root chain and peers
+func (pls *Plasma) listenNewBlock() error {
+	listener := func(blk *Block) error {
+		return nil
+	}
+
+	return pls.blockchain.addNewBlockListener(listener)
 }
