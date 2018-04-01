@@ -77,7 +77,7 @@ func New(config *Config) *Plasma {
 
 func (pls *Plasma) RegisterRpcClient(rpcClient *rpc.Client) {
 	if rpcClient == nil {
-		log.Warn("Cannot register nil RPC client to Plasma")
+		log.Warn("[Plasma] Cannot register nil RPC client to Plasma")
 	} else {
 		pls.backendChan <- ethclient.NewClient(rpcClient)
 	}
@@ -86,7 +86,7 @@ func (pls *Plasma) RegisterRpcClient(rpcClient *rpc.Client) {
 // RegisterClient register endpoint of ethereum jsonrpc for Plasma single node
 func (pls *Plasma) RegisterClient(backend *ethclient.Client) {
 	if backend == nil {
-		log.Warn("Cannot register nil endpoint to Plasma")
+		log.Warn("[Plasma] Cannot register nil endpoint to Plasma")
 	} else {
 		pls.backendChan <- backend
 	}
@@ -103,7 +103,7 @@ func (pls *Plasma) Start(server *p2p.Server) error {
 
 	go pls.run()
 
-	log.Info("Plama started", "version", ProtocolVersionStr)
+	log.Info("[Plasma] node started", "version", ProtocolVersionStr)
 	return nil
 }
 
@@ -154,16 +154,16 @@ func (pls *Plasma) run() {
 	select {
 	case backend := <-pls.backendChan:
 		pls.backend = backend
-		log.Info("Ethereum jsonrpc backend attached")
+		log.Info("[Plasma] Ethereum jsonrpc backend attached")
 	case <-pls.quit:
 		return
 	}
 
 	if err := pls.initialize(); err != nil {
-		log.Info("Plasma failed to initialize", err)
+		log.Info("[Plasma] Failed to initialize", err)
 	}
 
-	log.Info("Plasma initialized and running")
+	log.Info("[Plasma] node initialized and running")
 
 loop:
 	for {
@@ -193,10 +193,10 @@ func (pls *Plasma) initialize() error {
 
 		pls.rootchain = rootchain
 
-		log.Info("Plasma contract is already deployed", "address", pls.config.ContractAddress)
+		log.Info("[Plasma] Contract is already deployed", "address", pls.config.ContractAddress)
 	} else {
 		if !pls.isOperator() {
-			return fmt.Errorf("Plasma contract is not deployed yet at", pls.config.ContractAddress)
+			return fmt.Errorf("[Plasma] Contract is not deployed yet at", pls.config.ContractAddress)
 		}
 
 		transactOpts := bind.NewKeyedTransactor(pls.config.OperatorPrivateKey)
@@ -209,7 +209,7 @@ func (pls *Plasma) initialize() error {
 
 		pls.config.ContractAddress = address
 		pls.rootchain = rootchain
-		log.Info("Plasma contract deployed", "hash", tx.Hash(), "contract", address)
+		log.Info("[Plasma] Contract deployed", "hash", tx.Hash(), "contract", address)
 	}
 
 	// run deposit listener
@@ -266,7 +266,7 @@ func (pls *Plasma) listenDeposit() error {
 				if deposit != nil {
 					log.Info("[Plasma] New deposit on plasma contract", "depositor", deposit.Depositor, "amount", deposit.Amount)
 					if err := pls.blockchain.newDeposit(deposit.Amount, &deposit.Depositor); err != nil {
-						log.Warn("Failed to add new deposit from rootchain", err)
+						log.Warn("[Plasma] Failed to add new deposit from rootchain", err)
 					}
 				}
 
@@ -274,7 +274,7 @@ func (pls *Plasma) listenDeposit() error {
 				sub.Unsubscribe()
 				return
 			case err := <-sub.Err():
-				log.Warn("Deposit subscription error", err)
+				log.Warn("[Plasma] Deposit subscription error", err)
 				sub.Unsubscribe()
 				return
 			}
