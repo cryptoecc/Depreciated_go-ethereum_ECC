@@ -1,7 +1,10 @@
 package plasma
 
 import (
+	"math/big"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 const (
@@ -20,4 +23,9 @@ const (
 
 	expirationCycle   = time.Second
 	transmissionCycle = 300 * time.Millisecond
+)
+
+var (
+	big0        = big.NewInt(0)
+	nullAddress = common.StringToAddress("0x00")
 )

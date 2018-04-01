@@ -15,6 +15,10 @@ type Block struct {
 	sig            []byte
 }
 
+func NewBlock() *Block {
+	return &Block{}
+}
+
 // Hash returns sha3 hash of Block
 // TODO: implement this
 func (b *Block) Hash() []byte {
@@ -35,9 +39,9 @@ type Transaction struct {
 	blkNum2   *big.Int
 	txIndex2  *big.Int
 	oIndex2   *big.Int
-	newOwner1 common.Address
+	newOwner1 *common.Address
 	amount1   *big.Int
-	newOwner2 common.Address
+	newOwner2 *common.Address
 	amount2   *big.Int
 	fee       *big.Int
 	sig1      []byte
@@ -48,13 +52,18 @@ type Transaction struct {
 	spent2 bool
 }
 
+// NewTransaction creates Transaction instance
+func NewTransaction(blkNum1, txIndex1, oIndex1, blkNum2, txIndex2, oIndex2 *big.Int, newOwner1 *common.Address, amount1 *big.Int, newOwner2 *common.Address, amount2, fee *big.Int) *Transaction {
+	return &Transaction{blkNum1, txIndex1, oIndex1, blkNum2, txIndex2, oIndex2, newOwner1, amount1, newOwner2, amount2, fee, nil, nil, false, false}
+}
+
 // Hash returns sha3 hash of Transaction
 // TODO: implement this
 func (tx *Transaction) Hash() []byte {
 	return nil
 }
 
-// Sender returns sender of TX input
+// Sender returns owner address of TX input
 func (tx *Transaction) Sender(oIndex *big.Int) (common.Address, error) {
 	hash := tx.Hash()
 	var sig []byte

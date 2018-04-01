@@ -3,6 +3,7 @@ package plasma
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -69,6 +70,8 @@ func New(config *Config) *Plasma {
 			}
 		},
 	}
+
+	pls.blockchain = NewBlockChain(config)
 
 	return pls
 }
@@ -170,10 +173,6 @@ loop:
 		case <-pls.quit:
 			break loop
 
-		default:
-			if err := pls.checkNextBlock(); err != nil {
-				log.Info("Plasma failed to fetch next block", err)
-			}
 		}
 	}
 }
@@ -214,8 +213,11 @@ func (pls *Plasma) initialize() error {
 		log.Info("Plasma contract deployed", "hash", tx.Hash(), "contract", address)
 	}
 
-	return nil
-}
+	// run deposit listener
+	err = pls.listenDeposit()
+	if err != nil {
+		return err
+	}
 
 // TODO: read next block from Plasma contract
 // If new block is submitted to the contract, request raw block data to operator
@@ -237,4 +239,51 @@ func (pls *Plasma) isOperator() bool {
 	operatorAddress := crypto.PubkeyToAddress(pls.config.OperatorPrivateKey.PublicKey)
 
 	return operatorAddress == params.PlasmaOperatorAddress
+}
+
+// watch Deposit event
+func (pls *Plasma) listenDeposit() error {
+	filterer, err := contract.NewRootChainFilterer(pls.config.ContractAddress, pls.backend)
+
+	if err != nil {
+		return err
+	}
+
+	// TODO: If plasma node had stopped previously, read event from last parent block to stoped
+	watchOpts := bind.WatchOpts{
+		Context: pls.context,
+		Start:   nil,
+	}
+
+	sink := make(chan *contract.RootChainDeposit)
+
+	sub, err := filterer.WatchDeposit(&watchOpts, sink)
+
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		for {
+			select {
+			case deposit := <-sink:
+				if deposit != nil {
+					log.Info("[Plasma] New deposit on plasma contract", "depositor", deposit.Depositor, "amount", deposit.Amount)
+					if err := pls.blockchain.newDeposit(deposit.Amount, &deposit.Depositor); err != nil {
+						log.Warn("Failed to add new deposit from rootchain", err)
+					}
+				}
+
+			case <-pls.quit:
+				sub.Unsubscribe()
+				return
+			case err := <-sub.Err():
+				log.Warn("Deposit subscription error", err)
+				sub.Unsubscribe()
+				return
+			}
+		}
+	}()
+
+	return nil
 }

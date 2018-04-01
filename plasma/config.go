@@ -22,12 +22,8 @@ type Config struct {
 
 	// Plasma operator node
 	OperatorNode *discover.Node
-}
 
-// BlockChainConfig represents BlockChain specific configuration.
-type BlockChainConfig struct {
-	Config
-
+	// BlockChain specific configs
 	DataDir string
 	OnDisk  bool // disk or memory
 }

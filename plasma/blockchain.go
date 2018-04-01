@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 var (
@@ -20,23 +21,29 @@ var (
 
 // BlockChain implements Plasma block chain service
 type BlockChain struct {
-	config              BlockChainConfig
+	config              *Config
 	blocks              []*Block
 	currentBlock        *Block
 	currentBlockNumber  *big.Int
 	pendingTransactions []*Transaction
 
+	// Channels
+	newBlock chan *Block
+	quit     chan struct{}
+
 	lock sync.RWMutex
 }
 
 // NewBlockChain creates BlockChain instance
-func NewBlockChain(config BlockChainConfig) *BlockChain {
+func NewBlockChain(config *Config) *BlockChain {
 	return &BlockChain{
 		config:              config,
 		blocks:              []*Block{},
 		currentBlock:        &Block{},
 		currentBlockNumber:  big.NewInt(1),
 		pendingTransactions: []*Transaction{},
+		newBlock:            make(chan *Block),
+		quit:                make(chan struct{}),
 	}
 }
 
@@ -121,7 +128,7 @@ func verifyTxInput(tx, preTx *Transaction, blkNum, txIndex, oIndex *big.Int) err
 	}
 
 	var spent bool
-	var owner common.Address
+	var owner *common.Address
 
 	if oIndex.Cmp(big.NewInt(0)) == 0 {
 		spent = tx.spent1
@@ -135,7 +142,7 @@ func verifyTxInput(tx, preTx *Transaction, blkNum, txIndex, oIndex *big.Int) err
 		return spentTransactionOutput
 	}
 
-	if sender != owner {
+	if sender != *owner {
 		return invalidSenderSignature
 	}
 
@@ -178,9 +185,40 @@ func (bc *BlockChain) submitBlock(b *Block) error {
 }
 
 // read transaction with hash of `txHash` from root chain
-func (bc *BlockChain) submitDeposit(txHash common.Hash) {
+func (bc *BlockChain) submitDeposit(txHash common.Hash) error {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+
+	return nil
+}
+
+func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) error {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
-	// tx := txHash
+	tx := NewTransaction(big0, big0, big0, big0, big0, big0, depositor, amount, &nullAddress, big0, big0)
+	transactionSet := []*Transaction{tx}
+
+	blk := &Block{transactionSet: transactionSet}
+	blkNum := *bc.currentBlockNumber
+	bc.blocks = append(bc.blocks, blk)
+	bc.currentBlock = NewBlock()
+	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
+
+	log.Info("[Plasma Chain] New Deposit added", "blockNumber", blkNum.Uint64())
+
+	return nil
+}
+
+func (bc *BlockChain) listenNewBlock(f func(blk *Block) error) error {
+	for {
+		select {
+		case blk := <-bc.newBlock:
+			if err := f(blk); err != nil {
+				log.Info("[Plasma Chain] Faield to listen new block", err)
+			}
+		case <-bc.quit:
+			return nil
+		}
+	}
 }
