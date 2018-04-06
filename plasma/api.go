@@ -106,29 +106,21 @@ func (api *PublicPlasmaAPI) ApplyTransaction(ctx context.Context, args TxArgs) (
 }
 
 func (api *PublicPlasmaAPI) GetBlock(ctx context.Context, blkNum *big.Int) (map[string]interface{}, error) {
-	blk, err := api.pls.blockchain.getBlock(blkNum)
+	b, err := api.pls.blockchain.getBlock(blkNum)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return map[string]interface{}{
-		"hash":         blk.merkle.Root(),
-		"transactions": blk.transactionSet,
-	}, nil
+	return b.ToRPCResponse(), nil
 }
 
-func (api *PublicPlasmaAPI) GetTransaction(ctx context.Context, blkNum, txIndex *big.Int) (txJSONData, error) {
-	// func (api *PublicPlasmaAPI) GetTransaction(ctx context.Context, blkNum, txIndex *big.Int) (map[string]interface{}, error) {
-
+func (api *PublicPlasmaAPI) GetTransaction(ctx context.Context, blkNum, txIndex *big.Int) (map[string]interface{}, error) {
 	tx, err := api.pls.blockchain.getTransaction(blkNum, txIndex)
 
 	if err != nil {
-		return txJSONData{}, err
+		return nil, err
 	}
 
-	// return tx.MarshalJSON()
-	// return tx.ToFlat(), nil
-	return tx.ToFlat2(), nil
-
+	return tx.ToRPCResponse(), nil
 }

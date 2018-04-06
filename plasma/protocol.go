@@ -28,5 +28,5 @@ const (
 var (
 	big0        = big.NewInt(0)
 	big1        = big.NewInt(1)
-	nullAddress = common.StringToAddress("0x00")
+	nullAddress = common.HexToAddress("")
 )

@@ -219,6 +219,7 @@ func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 		}
 	}
 
+	bc.currentBlock.blockNumber = big.NewInt(bc.currentBlockNumber.Int64())
 	bc.blocks = append(bc.blocks, bc.currentBlock)
 	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
 	bc.currentBlock = &Block{}
@@ -239,7 +240,10 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) (co
 		big0)
 	transactionSet := []*Transaction{tx}
 
-	b := &Block{transactionSet: transactionSet}
+	b := &Block{
+		transactionSet: transactionSet,
+		blockNumber:    big.NewInt(bc.currentBlockNumber.Int64()),
+	}
 	blkNum := *bc.currentBlockNumber
 
 	_, err := b.Seal()

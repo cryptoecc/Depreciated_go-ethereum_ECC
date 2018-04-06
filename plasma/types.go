@@ -15,6 +15,7 @@ import (
 
 // Block implements Plasma chiain block
 type Block struct {
+	blockNumber    *big.Int
 	transactionSet []*Transaction
 	merkle         *merkle.Merkle // TODO: store in DB with caching
 	sig            []byte
@@ -23,6 +24,20 @@ type Block struct {
 type blockJSONData struct {
 	hash         common.Hash `json:"hash"`
 	transactions [][]byte    `json:"transactions"`
+}
+
+func (b *Block) ToRPCResponse() map[string]interface{} {
+	var transactions []map[string]interface{}
+
+	for _, tx := range b.transactionSet {
+		transactions = append(transactions, tx.ToRPCResponse())
+	}
+
+	return map[string]interface{}{
+		"hash":         b.merkle.Root(),
+		"blockNumber":  b.blockNumber,
+		"transactions": transactions,
+	}
 }
 
 func NewBlock() *Block {
@@ -125,12 +140,8 @@ type txJSONData struct {
 	newOwner2 *common.Address `json:"newOwner2"`
 	amount2   *hexutil.Big    `json:"amount2"`
 	fee       *hexutil.Big    `json:"fee"`
-	v1        *hexutil.Big    `json:"v1"`
-	r1        *hexutil.Bytes  `json:"r1"`
-	s1        *hexutil.Bytes  `json:"s1"`
-	v2        *hexutil.Big    `json:"v2"`
-	r2        *hexutil.Bytes  `json:"r2"`
-	s2        *hexutil.Bytes  `json:"s2"`
+	sig1      hexutil.Bytes   `json:"sig1"`
+	sig2      hexutil.Bytes   `json:"sig2"`
 	spent1    *hexutil.Big    `json:"spent1"`
 	spent2    *hexutil.Big    `json:"spent2"`
 }
@@ -157,55 +168,35 @@ func (tx *Transaction) Hash() (h common.Hash) {
 	return h
 }
 
-func (tx *Transaction) ToFlat() map[string]interface{} {
+func (tx *Transaction) ToRPCResponse() map[string]interface{} {
 
-	return map[string]interface{}{
-		"blkNum1":   (*hexutil.Big)(tx.data.blkNum1),
-		"txIndex1":  (*hexutil.Big)(tx.data.txIndex1),
-		"oIndex1":   (*hexutil.Big)(tx.data.oIndex1),
-		"blkNum2":   (*hexutil.Big)(tx.data.blkNum2),
-		"txIndex2":  (*hexutil.Big)(tx.data.txIndex2),
-		"oIndex2":   (*hexutil.Big)(tx.data.oIndex2),
+	ret := map[string]interface{}{
+		"blkNum1":   tx.data.blkNum1,
+		"txIndex1":  tx.data.txIndex1,
+		"oIndex1":   tx.data.oIndex1,
+		"blkNum2":   tx.data.blkNum2,
+		"txIndex2":  tx.data.txIndex2,
+		"oIndex2":   tx.data.oIndex2,
 		"newOwner1": tx.data.newOwner1,
-		"amount1":   (*hexutil.Big)(tx.data.amount1),
+		"amount1":   tx.data.amount1,
 		"newOwner2": tx.data.newOwner2,
-		"amount2":   (*hexutil.Big)(tx.data.amount2),
-		"fee":       (*hexutil.Big)(tx.data.fee),
-		// "v1":        tx.sig1[64],
-		// "r1":        tx.sig1[0:32],
-		// "s1":        tx.sig1[32:64],
-		// "v2":        tx.sig2[64],
-		// "r2":        tx.sig2[0:32],
-		// "s2":        tx.sig2[32:64],
+		"amount2":   tx.data.amount2,
+		"fee":       tx.data.fee,
 	}
 
-}
+	if len(tx.sig1) > 0 {
+		ret["v1"] = tx.sig1[64]
+		ret["r1"] = tx.sig1[0:32]
+		ret["s1"] = tx.sig1[32:64]
+	}
 
-func (tx *Transaction) ToFlat2() txJSONData {
+	if len(tx.sig2) > 0 {
+		ret["v1"] = tx.sig2[64]
+		ret["r1"] = tx.sig2[0:32]
+		ret["s1"] = tx.sig2[32:64]
+	}
 
-	var enc txJSONData
-
-	enc.blkNum1 = (*hexutil.Big)(tx.data.blkNum1)
-	enc.txIndex1 = (*hexutil.Big)(tx.data.txIndex1)
-	enc.oIndex1 = (*hexutil.Big)(tx.data.oIndex1)
-	enc.blkNum2 = (*hexutil.Big)(tx.data.blkNum2)
-	enc.txIndex2 = (*hexutil.Big)(tx.data.txIndex2)
-	enc.oIndex2 = (*hexutil.Big)(tx.data.oIndex2)
-	enc.newOwner1 = tx.data.newOwner1
-	enc.amount1 = (*hexutil.Big)(tx.data.amount1)
-	enc.newOwner2 = tx.data.newOwner2
-	enc.amount2 = (*hexutil.Big)(tx.data.amount2)
-	enc.fee = (*hexutil.Big)(tx.data.fee)
-	// enc.v1 = (*hexutil.Big)(tx.sig1[64])
-	// enc.r1 = tx.sig1[0:32]
-	// enc.s1 = tx.sig1[0:32]
-	// enc.v2 = tx.sig2[64]
-	// enc.r2 = tx.sig2[0:32]
-	// enc.s2 = tx.sig2[0:32]
-	// enc.spent1 = tx.spent1
-	// enc.spent2 = tx.spent2
-
-	return enc
+	return ret
 }
 
 func (tx *Transaction) MarshalJSON() ([]byte, error) {
@@ -223,14 +214,20 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 	enc.newOwner2 = tx.data.newOwner2
 	enc.amount2 = (*hexutil.Big)(tx.data.amount2)
 	enc.fee = (*hexutil.Big)(tx.data.fee)
-	// enc.v1 = (*hexutil.Big)(tx.sig1[64])
-	// enc.r1 = tx.sig1[0:32]
-	// enc.s1 = tx.sig1[0:32]
-	// enc.v2 = tx.sig2[64]
-	// enc.r2 = tx.sig2[0:32]
-	// enc.s2 = tx.sig2[0:32]
-	// enc.spent1 = tx.spent1
-	// enc.spent2 = tx.spent2
+
+	enc.sig1 = tx.sig1
+	enc.sig2 = tx.sig2
+
+	if tx.spent1 {
+		enc.spent1 = (*hexutil.Big)(big1)
+	} else {
+		enc.spent1 = (*hexutil.Big)(big0)
+	}
+	if tx.spent2 {
+		enc.spent2 = (*hexutil.Big)(big1)
+	} else {
+		enc.spent2 = (*hexutil.Big)(big0)
+	}
 
 	return json.Marshal(&enc)
 }

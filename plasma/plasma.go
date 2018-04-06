@@ -302,7 +302,7 @@ func (pls *Plasma) addSubmitListener() error {
 		tx, err := pls.rootchain.SubmitBlock(pls.transactOpts, blk.Hash())
 
 		if err != nil {
-			log.Info("[Plasma] Failed to submimt new block", "hash", blk.Hash(), err)
+			log.Info("[Plasma] Failed to submimt new block", "hash", blk.Hash(), "err", err)
 		} else {
 			log.Info("[Plasma] Submimt new block", "blkhash", blk.Hash(), "txhash", tx.Hash())
 		}
