@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/contracts/plasma/contract"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -45,14 +46,15 @@ type Plasma struct {
 	lock sync.RWMutex
 }
 
-func New(config *Config) *Plasma {
+func New(config *Config, accountManager *accounts.Manager) *Plasma {
 	if config == nil {
 		config = &DefaultConfig
 	}
 
 	pls := &Plasma{
-		config:  config,
-		context: context.Background(),
+		config:         config,
+		context:        context.Background(),
+		accountManager: accountManager,
 	}
 
 	pls.backendChan = make(chan *ethclient.Client)
@@ -105,7 +107,7 @@ func (pls *Plasma) Start(server *p2p.Server) error {
 
 	go pls.run()
 
-	log.Info("[Plasma] node started", "version", ProtocolVersionStr)
+	log.Info("[Plasma] node started", "version", ProtocolVersionStr, "operator", pls.config.OperatorAddress, "contract", pls.config.ContractAddress)
 	return nil
 }
 
@@ -275,7 +277,7 @@ func (pls *Plasma) listenDeposit() error {
 			case deposit := <-sink:
 				if deposit != nil {
 					log.Info("[Plasma] New deposit on plasma contract", "depositor", deposit.Depositor, "amount", deposit.Amount)
-					if err := pls.blockchain.newDeposit(deposit.Amount, &deposit.Depositor); err != nil {
+					if _, err := pls.blockchain.newDeposit(deposit.Amount, &deposit.Depositor); err != nil {
 						log.Warn("[Plasma] Failed to add new deposit from rootchain", err)
 					}
 				}
@@ -308,4 +310,15 @@ func (pls *Plasma) addSubmitListener() error {
 	}
 
 	return pls.blockchain.addNewBlockListener(listener)
+}
+
+func (pls *Plasma) sign(hash []byte, from common.Address) ([]byte, error) {
+	// Look up the wallet containing the requested signer
+	account := accounts.Account{Address: from}
+	wallet, err := pls.accountManager.Find(account)
+	if err != nil {
+		return nil, err
+	}
+
+	return wallet.SignHash(account, hash)
 }

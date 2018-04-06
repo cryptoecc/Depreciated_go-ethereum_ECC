@@ -455,12 +455,31 @@ web3._extend({
 	property: 'pls',
 	methods: [
 		new web3._extend.Method({
-			name: 'currentBlockNumber',
-			call: 'pls_currentBlockNumber',
+			name: 'submitBlock',
+			call: 'pls_submitBlock',
 			params: 0
-		})
+		}),
+		new web3._extend.Method({
+			name: 'applyTransaction',
+			call: 'pls_applyTransaction',
+			params: 1
+		}),
+		new web3._extend.Method({
+			name: 'getBlock',
+			call: 'pls_getBlock',
+			params: 1
+		}),
+		new web3._extend.Method({
+			name: 'getTransaction',
+			call: 'pls_getTransaction',
+			params: 2
+		}),
 	],
 	properties: [
+    new web3._extend.Property({
+      name: 'currentBlockNumber',
+      getter: 'pls_currentBlockNumber',
+    }),
 	]
 });
 `

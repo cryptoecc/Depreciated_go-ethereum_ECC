@@ -60,16 +60,38 @@ func (bc *BlockChain) getCurrentBlockNumber() *big.Int {
 	return bc.currentBlockNumber
 }
 
-func (bc *BlockChain) getBlock(blkNum *big.Int) *Block {
+func (bc *BlockChain) getBlock(blkNum *big.Int) (*Block, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
-	return bc.blocks[blkNum.Int64()]
+
+	if blkNum.Cmp(big.NewInt(0)) == 0 {
+		return nil, errors.New("No block with block number 0")
+	}
+
+	if blkNum.Cmp(big.NewInt(int64(len(bc.blocks)))) >= 0 {
+		return nil, errors.New("No block with block number " + blkNum.String())
+	}
+
+	return bc.blocks[blkNum.Int64()], nil
 }
 
-func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) *Transaction {
+func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*Transaction, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
-	return bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()]
+
+	if blkNum.Cmp(big.NewInt(0)) == 0 {
+		return nil, errors.New("No block with block number 0")
+	}
+
+	if blkNum.Cmp(big.NewInt(int64(len(bc.blocks)))) >= 0 {
+		return nil, errors.New("No block with block number " + blkNum.String())
+	}
+
+	if txIndex.Cmp(big.NewInt(int64(len(bc.blocks[blkNum.Int64()].transactionSet)))) > 0 {
+		return nil, errors.New("No transaction with txindex" + txIndex.String())
+	}
+
+	return bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()], nil
 }
 
 // TODO: broadcast new transaction to peers
@@ -94,7 +116,7 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 	inputAmounts := big.NewInt(0)
 
 	if tx.data.blkNum1.Cmp(big.NewInt(0)) > 0 {
-		preTX := bc.getTransaction(tx.data.blkNum1, tx.data.txIndex1)
+		preTX, _ := bc.getTransaction(tx.data.blkNum1, tx.data.txIndex1)
 
 		if err := verifyTxInput(tx, preTX, tx.data.blkNum1, tx.data.txIndex1, tx.data.oIndex1); err != nil {
 			return err
@@ -105,7 +127,7 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 	}
 
 	if tx.data.blkNum2.Cmp(big.NewInt(0)) > 0 {
-		preTX := bc.getTransaction(tx.data.blkNum2, tx.data.txIndex2)
+		preTX, _ := bc.getTransaction(tx.data.blkNum2, tx.data.txIndex2)
 
 		if err := verifyTxInput(tx, preTX, tx.data.blkNum2, tx.data.txIndex2, tx.data.oIndex2); err != nil {
 			return err
@@ -171,22 +193,29 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 // submitBlock seals current block. Only operator can seal, broadcast to peers,
 // and record it on root chain
 // TODO: Check the submited block is correctly recorded
-func (bc *BlockChain) submitBlock(b *Block, privKey *ecdsa.PrivateKey) error {
+func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
+	b := bc.currentBlock
+
+	if privKey == nil {
+		privKey = bc.config.OperatorPrivateKey
+	}
+
 	_, err := b.Seal()
 	if err != nil {
-		return err
+		return common.BytesToHash(nil), err
 	}
 
 	b.Sign(privKey)
 
 	if sender, err := b.Sender(); err != nil {
-		return err
+		return common.BytesToHash(nil), err
 	} else {
 		if sender != bc.config.OperatorAddress {
-			return invalidOperator
+			log.Warn("[Plasma chain] block sealer and plasma operator not matched", "sealer", sender, "operator", bc.config.OperatorAddress)
+			return common.BytesToHash(nil), invalidOperator
 		}
 	}
 
@@ -195,14 +224,10 @@ func (bc *BlockChain) submitBlock(b *Block, privKey *ecdsa.PrivateKey) error {
 	bc.currentBlock = &Block{}
 	bc.newBlock <- b
 
-	return nil
+	return b.Hash(), nil
 }
 
-func (bc *BlockChain) submitCurrentBlock(privKey *ecdsa.PrivateKey) error {
-	return bc.submitBlock(bc.currentBlock, privKey)
-}
-
-func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) error {
+func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) (common.Hash, error) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
@@ -214,15 +239,32 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) err
 		big0)
 	transactionSet := []*Transaction{tx}
 
-	blk := &Block{transactionSet: transactionSet}
+	b := &Block{transactionSet: transactionSet}
 	blkNum := *bc.currentBlockNumber
-	bc.blocks = append(bc.blocks, blk)
-	bc.currentBlock = NewBlock()
+
+	_, err := b.Seal()
+	if err != nil {
+		return common.BytesToHash(nil), err
+	}
+
+	b.Sign(bc.config.OperatorPrivateKey)
+
+	if sender, err := b.Sender(); err != nil {
+		return common.BytesToHash(nil), err
+	} else {
+		if sender != bc.config.OperatorAddress {
+			log.Warn("[Plasma chain] block sealer and plasma operator not matched", "sealer", sender, "operator", bc.config.OperatorAddress)
+			return common.BytesToHash(nil), invalidOperator
+		}
+	}
+
+	bc.blocks = append(bc.blocks, b)
 	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
+	bc.newBlock <- b
 
 	log.Info("[Plasma Chain] New Deposit added", "blockNumber", blkNum.Uint64())
 
-	return nil
+	return b.Hash(), nil
 }
 
 // TODO: use event.Feed if needed.

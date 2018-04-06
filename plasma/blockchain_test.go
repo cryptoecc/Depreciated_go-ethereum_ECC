@@ -20,7 +20,7 @@ func TestMain(t *testing.T) {
 	amount := big.NewInt(1000)
 	owner, ownerKey := addrs[0], keys[0]
 
-	if err := bc.newDeposit(amount, owner); err != nil {
+	if _, err := bc.newDeposit(amount, owner); err != nil {
 		t.Fatal("Failed to create new deposit", err)
 	}
 
@@ -39,10 +39,13 @@ func TestMain(t *testing.T) {
 	}
 
 	// submit block
-	bc.submitCurrentBlock(bc.config.OperatorPrivateKey)
+	bc.submitBlock(bc.config.OperatorPrivateKey)
 	b1 := <-bc.newBlock
 	if b1.transactionSet[0].Hash() != tx1.Hash() {
 		t.Fatal("tx1 is not included into block1")
+	}
+	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
+		t.Fatal("b1 sender and operator address mismatched")
 	}
 
 	// send transaction 2

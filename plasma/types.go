@@ -2,9 +2,11 @@ package plasma
 
 import (
 	"crypto/ecdsa"
+	"encoding/json"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/sha3"
 	"github.com/ethereum/go-ethereum/plasma/merkle"
@@ -16,6 +18,11 @@ type Block struct {
 	transactionSet []*Transaction
 	merkle         *merkle.Merkle // TODO: store in DB with caching
 	sig            []byte
+}
+
+type blockJSONData struct {
+	hash         common.Hash `json:"hash"`
+	transactions [][]byte    `json:"transactions"`
 }
 
 func NewBlock() *Block {
@@ -43,6 +50,24 @@ func (b *Block) Seal() (common.Hash, error) {
 // Hash returns sha3 hash of Block
 func (b *Block) Hash() common.Hash {
 	return b.merkle.Root()
+}
+
+func (b *Block) MarshalJSON() ([]byte, error) {
+	var enc blockJSONData
+
+	enc.hash = b.Hash()
+
+	for _, tx := range b.transactionSet {
+		txJSON, err := tx.MarshalJSON()
+
+		if err != nil {
+			return nil, err
+		}
+
+		enc.transactions = append(enc.transactions, txJSON)
+	}
+
+	return json.Marshal(&enc)
 }
 
 func (b *Block) Sign(privKey *ecdsa.PrivateKey) error {
@@ -88,6 +113,28 @@ type Transaction struct {
 	spent2 bool
 }
 
+type txJSONData struct {
+	blkNum1   *hexutil.Big    `json:"blkNum1"`
+	txIndex1  *hexutil.Big    `json:"txIndex1"`
+	oIndex1   *hexutil.Big    `json:"oIndex1"`
+	blkNum2   *hexutil.Big    `json:"blkNum2"`
+	txIndex2  *hexutil.Big    `json:"txIndex2"`
+	oIndex2   *hexutil.Big    `json:"oIndex2"`
+	newOwner1 *common.Address `json:"newOwner1"`
+	amount1   *hexutil.Big    `json:"amount1"`
+	newOwner2 *common.Address `json:"newOwner2"`
+	amount2   *hexutil.Big    `json:"amount2"`
+	fee       *hexutil.Big    `json:"fee"`
+	v1        *hexutil.Big    `json:"v1"`
+	r1        *hexutil.Bytes  `json:"r1"`
+	s1        *hexutil.Bytes  `json:"s1"`
+	v2        *hexutil.Big    `json:"v2"`
+	r2        *hexutil.Bytes  `json:"r2"`
+	s2        *hexutil.Bytes  `json:"s2"`
+	spent1    *hexutil.Big    `json:"spent1"`
+	spent2    *hexutil.Big    `json:"spent2"`
+}
+
 // NewTransaction creates Transaction instance
 func NewTransaction(blkNum1, txIndex1, oIndex1, blkNum2, txIndex2, oIndex2 *big.Int, newOwner1 *common.Address, amount1 *big.Int, newOwner2 *common.Address, amount2, fee *big.Int) *Transaction {
 	data := txData{
@@ -108,6 +155,84 @@ func (tx *Transaction) Hash() (h common.Hash) {
 	d.Sum(h[:0])
 
 	return h
+}
+
+func (tx *Transaction) ToFlat() map[string]interface{} {
+
+	return map[string]interface{}{
+		"blkNum1":   (*hexutil.Big)(tx.data.blkNum1),
+		"txIndex1":  (*hexutil.Big)(tx.data.txIndex1),
+		"oIndex1":   (*hexutil.Big)(tx.data.oIndex1),
+		"blkNum2":   (*hexutil.Big)(tx.data.blkNum2),
+		"txIndex2":  (*hexutil.Big)(tx.data.txIndex2),
+		"oIndex2":   (*hexutil.Big)(tx.data.oIndex2),
+		"newOwner1": tx.data.newOwner1,
+		"amount1":   (*hexutil.Big)(tx.data.amount1),
+		"newOwner2": tx.data.newOwner2,
+		"amount2":   (*hexutil.Big)(tx.data.amount2),
+		"fee":       (*hexutil.Big)(tx.data.fee),
+		// "v1":        tx.sig1[64],
+		// "r1":        tx.sig1[0:32],
+		// "s1":        tx.sig1[32:64],
+		// "v2":        tx.sig2[64],
+		// "r2":        tx.sig2[0:32],
+		// "s2":        tx.sig2[32:64],
+	}
+
+}
+
+func (tx *Transaction) ToFlat2() txJSONData {
+
+	var enc txJSONData
+
+	enc.blkNum1 = (*hexutil.Big)(tx.data.blkNum1)
+	enc.txIndex1 = (*hexutil.Big)(tx.data.txIndex1)
+	enc.oIndex1 = (*hexutil.Big)(tx.data.oIndex1)
+	enc.blkNum2 = (*hexutil.Big)(tx.data.blkNum2)
+	enc.txIndex2 = (*hexutil.Big)(tx.data.txIndex2)
+	enc.oIndex2 = (*hexutil.Big)(tx.data.oIndex2)
+	enc.newOwner1 = tx.data.newOwner1
+	enc.amount1 = (*hexutil.Big)(tx.data.amount1)
+	enc.newOwner2 = tx.data.newOwner2
+	enc.amount2 = (*hexutil.Big)(tx.data.amount2)
+	enc.fee = (*hexutil.Big)(tx.data.fee)
+	// enc.v1 = (*hexutil.Big)(tx.sig1[64])
+	// enc.r1 = tx.sig1[0:32]
+	// enc.s1 = tx.sig1[0:32]
+	// enc.v2 = tx.sig2[64]
+	// enc.r2 = tx.sig2[0:32]
+	// enc.s2 = tx.sig2[0:32]
+	// enc.spent1 = tx.spent1
+	// enc.spent2 = tx.spent2
+
+	return enc
+}
+
+func (tx *Transaction) MarshalJSON() ([]byte, error) {
+
+	var enc txJSONData
+
+	enc.blkNum1 = (*hexutil.Big)(tx.data.blkNum1)
+	enc.txIndex1 = (*hexutil.Big)(tx.data.txIndex1)
+	enc.oIndex1 = (*hexutil.Big)(tx.data.oIndex1)
+	enc.blkNum2 = (*hexutil.Big)(tx.data.blkNum2)
+	enc.txIndex2 = (*hexutil.Big)(tx.data.txIndex2)
+	enc.oIndex2 = (*hexutil.Big)(tx.data.oIndex2)
+	enc.newOwner1 = tx.data.newOwner1
+	enc.amount1 = (*hexutil.Big)(tx.data.amount1)
+	enc.newOwner2 = tx.data.newOwner2
+	enc.amount2 = (*hexutil.Big)(tx.data.amount2)
+	enc.fee = (*hexutil.Big)(tx.data.fee)
+	// enc.v1 = (*hexutil.Big)(tx.sig1[64])
+	// enc.r1 = tx.sig1[0:32]
+	// enc.s1 = tx.sig1[0:32]
+	// enc.v2 = tx.sig2[64]
+	// enc.r2 = tx.sig2[0:32]
+	// enc.s2 = tx.sig2[0:32]
+	// enc.spent1 = tx.spent1
+	// enc.spent2 = tx.spent2
+
+	return json.Marshal(&enc)
 }
 
 // Sender returns owner address of TX input
