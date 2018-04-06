@@ -170,6 +170,7 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 
 // submitBlock seals current block. Only operator can seal, broadcast to peers,
 // and record it on root chain
+// TODO: Check the submited block is correctly recorded
 func (bc *BlockChain) submitBlock(b *Block, privKey *ecdsa.PrivateKey) error {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()

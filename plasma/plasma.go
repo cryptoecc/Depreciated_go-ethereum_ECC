@@ -20,10 +20,12 @@ import (
 
 // Plasma implements the Plasma full node service
 type Plasma struct {
-	config    *Config
-	protocol  p2p.Protocol
-	context   context.Context
-	rootchain *contract.RootChain
+	config   *Config
+	protocol p2p.Protocol
+	context  context.Context
+
+	rootchain    *contract.RootChain
+	transactOpts *bind.TransactOpts
 
 	// Channels
 	quit        chan bool
@@ -199,9 +201,9 @@ func (pls *Plasma) initialize() error {
 			return fmt.Errorf("[Plasma] Contract is not deployed yet at", pls.config.ContractAddress)
 		}
 
-		transactOpts := bind.NewKeyedTransactor(pls.config.OperatorPrivateKey)
+		pls.transactOpts = bind.NewKeyedTransactor(pls.config.OperatorPrivateKey)
 
-		address, tx, rootchain, err := contract.DeployRootChain(transactOpts, pls.backend)
+		address, tx, rootchain, err := contract.DeployRootChain(pls.transactOpts, pls.backend)
 
 		if err != nil {
 			return err
@@ -218,7 +220,7 @@ func (pls *Plasma) initialize() error {
 		return err
 	}
 
-	err = pls.listenNewBlock()
+	err = pls.addSubmitListener()
 	if err != nil {
 		return err
 	}
@@ -292,9 +294,16 @@ func (pls *Plasma) listenDeposit() error {
 	return nil
 }
 
-// listenNewBlock send new block to root chain and peers
-func (pls *Plasma) listenNewBlock() error {
+// addSubmitListener send new block to root chain and peers
+func (pls *Plasma) addSubmitListener() error {
 	listener := func(blk *Block) error {
+		tx, err := pls.rootchain.SubmitBlock(pls.transactOpts, blk.Hash())
+
+		if err != nil {
+			log.Info("[Plasma] Failed to submimt new block", "hash", blk.Hash(), err)
+		} else {
+			log.Info("[Plasma] Submimt new block", "blkhash", blk.Hash(), "txhash", tx.Hash())
+		}
 		return nil
 	}
 
