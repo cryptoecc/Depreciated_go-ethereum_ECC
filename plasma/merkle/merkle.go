@@ -246,3 +246,7 @@ func (m *Merkle) Index(hash common.Hash) int {
 
 	return ret
 }
+
+func (m *Merkle) Root() common.Hash {
+	return m.root
+}
