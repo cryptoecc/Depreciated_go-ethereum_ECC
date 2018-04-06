@@ -72,6 +72,7 @@ func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) *Transaction {
 	return bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()]
 }
 
+// TODO: broadcast new transaction to peers
 func (bc *BlockChain) applyTransaction(tx *Transaction) error {
 	if err := bc.verifyTransaction(tx); err != nil {
 		log.Info("[Plasma Chain] Failed to verify transaction", "hash", tx.Hash(), "error", err)
@@ -104,7 +105,6 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 	}
 
 	if tx.data.blkNum2.Cmp(big.NewInt(0)) > 0 {
-
 		preTX := bc.getTransaction(tx.data.blkNum2, tx.data.txIndex2)
 
 		if err := verifyTxInput(tx, preTX, tx.data.blkNum2, tx.data.txIndex2, tx.data.oIndex2); err != nil {
@@ -122,7 +122,7 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 	return nil
 }
 
-// verify UTXO of preTX can be spent
+// verify UTXO can be spent
 func verifyTxInput(tx, preTx *Transaction, blkNum, txIndex, oIndex *big.Int) error {
 	sender, err := tx.Sender(oIndex)
 
@@ -168,7 +168,8 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 	}
 }
 
-// submitBlock seals current block
+// submitBlock seals current block. Only operator can seal, broadcast to peers,
+// and record it on root chain
 func (bc *BlockChain) submitBlock(b *Block) error {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
@@ -189,6 +190,11 @@ func (bc *BlockChain) submitBlock(b *Block) error {
 }
 
 func (bc *BlockChain) submitCurrentBlock(privKey *ecdsa.PrivateKey) error {
+	_, err := bc.currentBlock.Seal()
+	if err != nil {
+		return err
+	}
+
 	bc.currentBlock.Sign(privKey)
 
 	return bc.submitBlock(bc.currentBlock)
@@ -198,7 +204,12 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) err
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
-	tx := NewTransaction(big0, big0, big0, big0, big0, big0, depositor, amount, &nullAddress, big0, big0)
+	tx := NewTransaction(
+		big0, big0, big0,
+		big0, big0, big0,
+		depositor, amount,
+		&nullAddress, big0,
+		big0)
 	transactionSet := []*Transaction{tx}
 
 	blk := &Block{transactionSet: transactionSet}
