@@ -156,6 +156,26 @@ func NewTransaction(blkNum1, txIndex1, oIndex1, blkNum2, txIndex2, oIndex2 *big.
 		fee,
 	}
 
+	if data.newOwner1 == nil {
+		data.newOwner1 = &nullAddress
+	}
+
+	if data.newOwner2 == nil {
+		data.newOwner2 = &nullAddress
+	}
+
+	if data.amount1 == nil {
+		data.amount1 = big0
+	}
+
+	if data.amount2 == nil {
+		data.amount2 = big0
+	}
+
+	if data.fee == nil {
+		data.fee = big0
+	}
+
 	return &Transaction{data, nil, nil, false, false}
 }
 

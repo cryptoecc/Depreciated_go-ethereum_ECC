@@ -110,15 +110,31 @@ func (bc *BlockChain) applyTransaction(tx *Transaction) error {
 }
 
 func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
-	outputAmounts := big.NewInt(0).Add(tx.data.amount1, tx.data.amount2)
-	outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.fee)
+	outputAmounts := big.NewInt(0)
+
+	if tx.data.amount1 != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.amount1)
+	}
+
+	if tx.data.amount2 != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.amount2)
+	}
+
+	if tx.data.fee != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.fee)
+
+	}
 
 	inputAmounts := big.NewInt(0)
 
 	if tx.data.blkNum1.Cmp(big.NewInt(0)) > 0 {
-		preTX, _ := bc.getTransaction(tx.data.blkNum1, tx.data.txIndex1)
+		preTX, err := bc.getTransaction(tx.data.blkNum1, tx.data.txIndex1)
 
-		if err := verifyTxInput(tx, preTX, tx.data.blkNum1, tx.data.txIndex1, tx.data.oIndex1); err != nil {
+		if err != nil {
+			return err
+		}
+
+		if err := verifyTxInput(tx, preTX, tx.data.oIndex1); err != nil {
 			return err
 		}
 
@@ -127,9 +143,13 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 	}
 
 	if tx.data.blkNum2.Cmp(big.NewInt(0)) > 0 {
-		preTX, _ := bc.getTransaction(tx.data.blkNum2, tx.data.txIndex2)
+		preTX, err := bc.getTransaction(tx.data.blkNum2, tx.data.txIndex2)
 
-		if err := verifyTxInput(tx, preTX, tx.data.blkNum2, tx.data.txIndex2, tx.data.oIndex2); err != nil {
+		if err != nil {
+			return err
+		}
+
+		if err := verifyTxInput(tx, preTX, tx.data.oIndex2); err != nil {
 			return err
 		}
 
@@ -145,7 +165,7 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 }
 
 // verify UTXO can be spent
-func verifyTxInput(tx, preTx *Transaction, blkNum, txIndex, oIndex *big.Int) error {
+func verifyTxInput(tx, preTx *Transaction, oIndex *big.Int) error {
 	sender, err := tx.Sender(oIndex)
 
 	if err != nil {

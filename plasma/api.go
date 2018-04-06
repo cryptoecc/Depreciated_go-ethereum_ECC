@@ -2,12 +2,12 @@ package plasma
 
 import (
 	"context"
-	// "encoding/json"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
+	"errors"
 	"math/big"
-	// "sync"
-	// "time"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // PlasmaAPI provides an API to access Plasma related information.
@@ -23,19 +23,25 @@ type PublicPlasmaAPI struct {
 }
 
 type TxArgs struct {
-	blkNum1   *big.Int
-	txIndex1  *big.Int
-	oIndex1   *big.Int
-	blkNum2   *big.Int
-	txIndex2  *big.Int
-	oIndex2   *big.Int
-	newOwner1 *common.Address
-	amount1   *big.Int
-	newOwner2 *common.Address
-	amount2   *big.Int
-	fee       *big.Int
-	from1     *common.Address // sign input 1
-	from2     *common.Address // sign input 2
+	BlkNum1   *hexutil.Big    `json:"blkNum1"`
+	TxIndex1  *hexutil.Big    `json:"txIndex1"`
+	OIndex1   *hexutil.Big    `json:"oIndex1"`
+	BlkNum2   *hexutil.Big    `json:"blkNum2"`
+	TxIndex2  *hexutil.Big    `json:"txIndex2"`
+	OIndex2   *hexutil.Big    `json:"oIndex2"`
+	NewOwner1 *common.Address `json:"newOwner1"`
+	Amount1   *hexutil.Big    `json:"amount1"`
+	NewOwner2 *common.Address `json:"newOwner2"`
+	Amount2   *hexutil.Big    `json:"amount2"`
+	Fee       *hexutil.Big    `json:"fee"`
+	From1     *common.Address `json:"from1"` // sign input 1
+	From2     *common.Address `json:"from2"` // sign input 2
+}
+
+// setDefaults is a helper function that fills in default values for unspecified tx fields.
+func (args *TxArgs) setDefaults(ctx context.Context, b Backend) error {
+	log.Info("[Plasma api] TxArgs.setDefaults", "args.BlkNum1", args.BlkNum1)
+	return nil
 }
 
 func NewPlasmaAPI() PlasmaAPI {
@@ -71,42 +77,55 @@ func (api *PublicPlasmaAPI) SubmitBlock(ctx context.Context) (common.Hash, error
 }
 
 func (api *PublicPlasmaAPI) ApplyTransaction(ctx context.Context, args TxArgs) (common.Hash, error) {
+
+	if args.BlkNum1 == nil || args.BlkNum2 == nil {
+		return common.Hash{}, errors.New("Failed to read arguments")
+	}
+
+	if args.BlkNum1.ToInt().Cmp(big0) > 0 && args.From1 == nil {
+		return common.Hash{}, errors.New("Transaction input 1 should be signed by owner")
+	}
+
+	if args.BlkNum2.ToInt().Cmp(big0) > 0 && args.From2 == nil {
+		return common.Hash{}, errors.New("Transaction input 2 should be signed by owner")
+	}
+
 	tx := NewTransaction(
-		args.blkNum1, args.txIndex1, args.oIndex1,
-		args.blkNum2, args.txIndex2, args.oIndex2,
-		args.newOwner1, args.amount1,
-		args.newOwner2, args.amount2,
-		args.fee)
+		args.BlkNum1.ToInt(), args.TxIndex1.ToInt(), args.OIndex1.ToInt(),
+		args.BlkNum2.ToInt(), args.TxIndex2.ToInt(), args.OIndex2.ToInt(),
+		args.NewOwner1, args.Amount1.ToInt(),
+		args.NewOwner2, args.Amount2.ToInt(),
+		args.Fee.ToInt())
 
 	txHash := tx.Hash().Bytes()
 
-	if args.from1 != nil {
-		sig, err := api.pls.sign(txHash, *args.from1)
+	if args.From1 != nil {
+		sig, err := api.pls.sign(txHash, *args.From1)
 
 		if err != nil {
-			return common.BytesToHash(nil), err
+			return common.Hash{}, err
 		}
 
 		tx.sig1 = sig
 	}
 
-	if args.from2 != nil {
-		sig, err := api.pls.sign(txHash, *args.from2)
+	if args.From2 != nil {
+		sig, err := api.pls.sign(txHash, *args.From2)
 
 		if err != nil {
-			return common.BytesToHash(nil), err
+			return common.Hash{}, err
 		}
 
 		tx.sig2 = sig
 	}
 
-	log.Info("[Plasma API] apply transaction", "tx", tx)
+	log.Info("[Plasma API] apply transaction", "tx", tx, "sig1", tx.sig1, "sig2", tx.sig2)
 
 	return tx.Hash(), api.pls.blockchain.applyTransaction(tx)
 }
 
-func (api *PublicPlasmaAPI) GetBlock(ctx context.Context, blkNum *big.Int) (map[string]interface{}, error) {
-	b, err := api.pls.blockchain.getBlock(blkNum)
+func (api *PublicPlasmaAPI) GetBlock(ctx context.Context, BlkNum *hexutil.Big) (map[string]interface{}, error) {
+	b, err := api.pls.blockchain.getBlock(BlkNum.ToInt())
 
 	if err != nil {
 		return nil, err
@@ -115,8 +134,8 @@ func (api *PublicPlasmaAPI) GetBlock(ctx context.Context, blkNum *big.Int) (map[
 	return b.ToRPCResponse(), nil
 }
 
-func (api *PublicPlasmaAPI) GetTransaction(ctx context.Context, blkNum, txIndex *big.Int) (map[string]interface{}, error) {
-	tx, err := api.pls.blockchain.getTransaction(blkNum, txIndex)
+func (api *PublicPlasmaAPI) GetTransaction(ctx context.Context, BlkNum, TxIndex *big.Int) (map[string]interface{}, error) {
+	tx, err := api.pls.blockchain.getTransaction(BlkNum, TxIndex)
 
 	if err != nil {
 		return nil, err
