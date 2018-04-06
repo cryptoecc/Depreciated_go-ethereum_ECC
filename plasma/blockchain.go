@@ -43,7 +43,7 @@ func NewBlockChain(config *Config) *BlockChain {
 		currentBlock:        &Block{},
 		currentBlockNumber:  big.NewInt(1),
 		pendingTransactions: []*Transaction{},
-		newBlock:            make(chan *Block),
+		newBlock:            make(chan *Block, 1),
 		quit:                make(chan struct{}),
 	}
 }
@@ -170,14 +170,21 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 
 // submitBlock seals current block. Only operator can seal, broadcast to peers,
 // and record it on root chain
-func (bc *BlockChain) submitBlock(b *Block) error {
+func (bc *BlockChain) submitBlock(b *Block, privKey *ecdsa.PrivateKey) error {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
+
+	_, err := b.Seal()
+	if err != nil {
+		return err
+	}
+
+	b.Sign(privKey)
 
 	if sender, err := b.Sender(); err != nil {
 		return err
 	} else {
-		if bc.config.OperatorAddress != sender {
+		if sender != bc.config.OperatorAddress {
 			return invalidOperator
 		}
 	}
@@ -185,19 +192,13 @@ func (bc *BlockChain) submitBlock(b *Block) error {
 	bc.blocks = append(bc.blocks, bc.currentBlock)
 	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
 	bc.currentBlock = &Block{}
+	bc.newBlock <- b
 
 	return nil
 }
 
 func (bc *BlockChain) submitCurrentBlock(privKey *ecdsa.PrivateKey) error {
-	_, err := bc.currentBlock.Seal()
-	if err != nil {
-		return err
-	}
-
-	bc.currentBlock.Sign(privKey)
-
-	return bc.submitBlock(bc.currentBlock)
+	return bc.submitBlock(bc.currentBlock, privKey)
 }
 
 func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) error {

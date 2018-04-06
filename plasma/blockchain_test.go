@@ -40,6 +40,10 @@ func TestMain(t *testing.T) {
 
 	// submit block
 	bc.submitCurrentBlock(bc.config.OperatorPrivateKey)
+	b1 := <-bc.newBlock
+	if b1.transactionSet[0].Hash() != tx1.Hash() {
+		t.Fatal("tx1 is not included into block1")
+	}
 
 	// send transaction 2
 	tx2 := NewTransaction(
