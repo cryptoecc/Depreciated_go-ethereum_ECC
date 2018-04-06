@@ -23,7 +23,6 @@ var Modules = map[string]string{
 	"clique":     Clique_JS,
 	"debug":      Debug_JS,
 	"eth":        Eth_JS,
-	"pls":        Pls_JS,
 	"miner":      Miner_JS,
 	"net":        Net_JS,
 	"personal":   Personal_JS,
@@ -446,40 +445,6 @@ web3._extend({
 				return formatted;
 			}
 		}),
-	]
-});
-`
-
-const Pls_JS = `
-web3._extend({
-	property: 'pls',
-	methods: [
-		new web3._extend.Method({
-			name: 'submitBlock',
-			call: 'pls_submitBlock',
-			params: 0
-		}),
-		new web3._extend.Method({
-			name: 'applyTransaction',
-			call: 'pls_applyTransaction',
-			params: 1
-		}),
-		new web3._extend.Method({
-			name: 'getBlock',
-			call: 'pls_getBlock',
-			params: 1
-		}),
-		new web3._extend.Method({
-			name: 'getTransaction',
-			call: 'pls_getTransaction',
-			params: 2
-		}),
-	],
-	properties: [
-    new web3._extend.Property({
-      name: 'currentBlockNumber',
-      getter: 'pls_currentBlockNumber',
-    }),
 	]
 });
 `
