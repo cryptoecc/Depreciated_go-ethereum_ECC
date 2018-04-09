@@ -134,11 +134,16 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 			return err
 		}
 
-		if err := verifyTxInput(tx, preTX, tx.data.oIndex1); err != nil {
+		if err := verifyTxInput(tx, preTX, big0, tx.data.oIndex1); err != nil {
 			return err
 		}
 
-		inputAmount := preTX.data.amount1
+		var inputAmount *big.Int
+		if tx.data.oIndex1.Cmp(big0) == 0 {
+			inputAmount = preTX.data.amount1
+		} else {
+			inputAmount = preTX.data.amount2
+		}
 		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
 	}
 
@@ -149,15 +154,21 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 			return err
 		}
 
-		if err := verifyTxInput(tx, preTX, tx.data.oIndex2); err != nil {
+		if err := verifyTxInput(tx, preTX, big1, tx.data.oIndex2); err != nil {
 			return err
 		}
 
-		inputAmount := preTX.data.amount2
+		var inputAmount *big.Int
+		if tx.data.oIndex1.Cmp(big0) == 0 {
+			inputAmount = preTX.data.amount1
+		} else {
+			inputAmount = preTX.data.amount2
+		}
 		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
 	}
 
 	if inputAmounts.Cmp(outputAmounts) != 0 {
+		log.Info("[Plasma chain] mismatched amount", "input", inputAmounts, "output", outputAmounts)
 		return mismatchedTransactionAmounts
 	}
 
@@ -165,29 +176,29 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 }
 
 // verify UTXO can be spent
-func verifyTxInput(tx, preTx *Transaction, oIndex *big.Int) error {
-	sender, err := tx.Sender(oIndex)
+func verifyTxInput(tx, preTx *Transaction, curOIndex, preOIndex *big.Int) error {
+	sender, err := tx.Sender(curOIndex)
 
 	if err != nil {
 		return err
 	}
 
 	var spent bool
-	var owner *common.Address
+	var utxoOwner *common.Address
 
-	if oIndex.Cmp(big.NewInt(0)) == 0 {
-		spent = tx.spent1
-		owner = tx.data.newOwner1
-	} else if oIndex.Cmp(big.NewInt(1)) == 0 {
-		spent = tx.spent2
-		owner = tx.data.newOwner2
+	if preOIndex.Cmp(big.NewInt(0)) == 0 {
+		spent = preTx.spent1
+		utxoOwner = preTx.data.newOwner1
+	} else if preOIndex.Cmp(big.NewInt(1)) == 0 {
+		spent = preTx.spent2
+		utxoOwner = preTx.data.newOwner2
 	}
 
 	if spent {
 		return spentTransactionOutput
 	}
 
-	if sender != *owner {
+	if sender != *utxoOwner {
 		return invalidSenderSignature
 	}
 
@@ -248,6 +259,7 @@ func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 	return b.Hash(), nil
 }
 
+// only operator can add deposit transaction
 func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) (common.Hash, error) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
@@ -258,6 +270,7 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) (co
 		depositor, amount,
 		&nullAddress, big0,
 		big0)
+
 	transactionSet := []*Transaction{tx}
 
 	b := &Block{
