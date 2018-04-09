@@ -164,7 +164,7 @@ func (pls *Plasma) run() {
 	}
 
 	if err := pls.initialize(); err != nil {
-		log.Info("[Plasma] Failed to initialize", err)
+		log.Info("[Plasma] Failed to initialize", "err", err)
 	}
 
 	log.Info("[Plasma] node initialized and running")

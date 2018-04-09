@@ -119,7 +119,7 @@ func (api *PublicPlasmaAPI) ApplyTransaction(ctx context.Context, args TxArgs) (
 		tx.sig2 = sig
 	}
 
-	log.Info("[Plasma API] apply transaction", "tx", tx, "sig1", tx.sig1, "sig2", tx.sig2)
+	log.Info("[Plasma API] apply transaction", "txhash", tx.Hash())
 
 	return tx.Hash(), api.pls.blockchain.applyTransaction(tx)
 }
