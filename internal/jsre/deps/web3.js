@@ -3808,7 +3808,9 @@ var inputPlasmaTransactionFormatter = function (options){
     options[key] = utils.fromDecimal(options[key]);
   });
 
-    return options;
+  console.log(JSON.stringify(options, null, 2));
+
+  return options;
 };
 
 /**
@@ -5399,10 +5401,7 @@ var methods = function () {
         name: 'sendTransaction',
         call: 'eth_sendTransaction',
         params: 1,
-        inputFormatter: [function(options) {
-          console.log(JSON.stringify(options, null, 2));
-          return formatters.inputTransactionFormatter(options);
-        }]
+        inputFormatter: [formatters.inputTransactionFormatter]
     });
 
     var signTransaction = new Method({
@@ -5749,6 +5748,8 @@ module.exports = Personal;
  *   Carl Park <carl.p@onther.io>
  * @date 2017
  */
+
+"use strict";
 
 var Method = require('../method');
 var Property = require('../property');
