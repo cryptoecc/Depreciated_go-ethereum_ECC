@@ -102,8 +102,8 @@ func (bc *BlockChain) applyTransaction(tx *Transaction) error {
 		return err
 	}
 
-	bc.markUtxoSpent(tx.data.blkNum1, tx.data.txIndex1, tx.data.oIndex1)
-	bc.markUtxoSpent(tx.data.blkNum2, tx.data.txIndex2, tx.data.oIndex2)
+	bc.markUtxoSpent(tx.data.BlkNum1, tx.data.TxIndex1, tx.data.OIndex1)
+	bc.markUtxoSpent(tx.data.BlkNum2, tx.data.TxIndex2, tx.data.OIndex2)
 
 	bc.currentBlock.transactionSet = append(bc.currentBlock.transactionSet, tx)
 	return nil
@@ -112,57 +112,57 @@ func (bc *BlockChain) applyTransaction(tx *Transaction) error {
 func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 	outputAmounts := big.NewInt(0)
 
-	if tx.data.amount1 != nil {
-		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.amount1)
+	if tx.data.Amount1 != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.Amount1)
 	}
 
-	if tx.data.amount2 != nil {
-		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.amount2)
+	if tx.data.Amount2 != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.Amount2)
 	}
 
-	if tx.data.fee != nil {
-		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.fee)
+	if tx.data.Fee != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.Fee)
 
 	}
 
 	inputAmounts := big.NewInt(0)
 
-	if tx.data.blkNum1.Cmp(big.NewInt(0)) > 0 {
-		preTX, err := bc.getTransaction(tx.data.blkNum1, tx.data.txIndex1)
+	if tx.data.BlkNum1.Cmp(big.NewInt(0)) > 0 {
+		preTX, err := bc.getTransaction(tx.data.BlkNum1, tx.data.TxIndex1)
 
 		if err != nil {
 			return err
 		}
 
-		if err := verifyTxInput(tx, preTX, big0, tx.data.oIndex1); err != nil {
+		if err := verifyTxInput(tx, preTX, big0, tx.data.OIndex1); err != nil {
 			return err
 		}
 
 		var inputAmount *big.Int
-		if tx.data.oIndex1.Cmp(big0) == 0 {
-			inputAmount = preTX.data.amount1
+		if tx.data.OIndex1.Cmp(big0) == 0 {
+			inputAmount = preTX.data.Amount1
 		} else {
-			inputAmount = preTX.data.amount2
+			inputAmount = preTX.data.Amount2
 		}
 		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
 	}
 
-	if tx.data.blkNum2.Cmp(big.NewInt(0)) > 0 {
-		preTX, err := bc.getTransaction(tx.data.blkNum2, tx.data.txIndex2)
+	if tx.data.BlkNum2.Cmp(big.NewInt(0)) > 0 {
+		preTX, err := bc.getTransaction(tx.data.BlkNum2, tx.data.TxIndex2)
 
 		if err != nil {
 			return err
 		}
 
-		if err := verifyTxInput(tx, preTX, big1, tx.data.oIndex2); err != nil {
+		if err := verifyTxInput(tx, preTX, big1, tx.data.OIndex2); err != nil {
 			return err
 		}
 
 		var inputAmount *big.Int
-		if tx.data.oIndex1.Cmp(big0) == 0 {
-			inputAmount = preTX.data.amount1
+		if tx.data.OIndex1.Cmp(big0) == 0 {
+			inputAmount = preTX.data.Amount1
 		} else {
-			inputAmount = preTX.data.amount2
+			inputAmount = preTX.data.Amount2
 		}
 		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
 	}
@@ -188,10 +188,10 @@ func verifyTxInput(tx, preTx *Transaction, curOIndex, preOIndex *big.Int) error 
 
 	if preOIndex.Cmp(big.NewInt(0)) == 0 {
 		spent = preTx.spent1
-		utxoOwner = preTx.data.newOwner1
+		utxoOwner = preTx.data.NewOwner1
 	} else if preOIndex.Cmp(big.NewInt(1)) == 0 {
 		spent = preTx.spent2
-		utxoOwner = preTx.data.newOwner2
+		utxoOwner = preTx.data.NewOwner2
 	}
 
 	if spent {
