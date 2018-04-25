@@ -27,11 +27,11 @@ func TestMain(t *testing.T) {
 	// deposit transaction 1
 	b1 := <-bc.newBlock
 	tx1 := NewTransaction(
-		big1, big0, big0,
 		big0, big0, big0,
-		owner1, big.NewInt(1000),
+		big0, big0, big0,
+		owner1, amount,
 		&nullAddress, big0,
-		big.NewInt(0))
+		big0)
 
 	if b1.transactionSet[0].Hash() != tx1.Hash() {
 		t.Fatal("tx1 is not included into block1")
@@ -50,7 +50,7 @@ func TestMain(t *testing.T) {
 	// deposit transaction 2
 	b2 := <-bc.newBlock
 	tx2 := NewTransaction(
-		big.NewInt(2), big0, big0,
+		big0, big0, big0,
 		big0, big0, big0,
 		owner2, big.NewInt(1000),
 		&nullAddress, big0,
