@@ -17,10 +17,10 @@ import (
 
 // Block implements Plasma chiain block
 type Block struct {
-	blockNumber    *big.Int
-	transactionSet []*Transaction
-	merkle         *merkle.Merkle // TODO: store in DB with caching
-	sig            []byte
+	BlockNumber    *big.Int
+	TransactionSet []*Transaction
+	Merkle         *merkle.Merkle // TODO: store in DB with caching
+	Sig            []byte
 }
 
 type blockJSONData struct {
@@ -31,13 +31,13 @@ type blockJSONData struct {
 func (b *Block) ToRPCResponse() map[string]interface{} {
 	var transactions []map[string]interface{}
 
-	for _, tx := range b.transactionSet {
+	for _, tx := range b.TransactionSet {
 		transactions = append(transactions, tx.ToRPCResponse())
 	}
 
 	return map[string]interface{}{
-		"hash":         b.merkle.Root(),
-		"blockNumber":  b.blockNumber,
+		"hash":         b.Merkle.Root,
+		"blockNumber":  b.BlockNumber,
 		"transactions": transactions,
 	}
 }
@@ -49,24 +49,24 @@ func NewBlock() *Block {
 func (b *Block) Seal() (common.Hash, error) {
 	var hashes []common.Hash
 
-	for _, tx := range b.transactionSet {
+	for _, tx := range b.TransactionSet {
 		hashes = append(hashes, tx.Hash())
 	}
 
 	merkle, err := merkle.NewMerkle(16, hashes)
 
-	b.merkle = merkle
+	b.Merkle = merkle
 
 	if err != nil {
 		return common.HexToHash(""), err
 	}
 
-	return merkle.Root(), nil
+	return merkle.Root, nil
 }
 
 // Hash returns sha3 hash of Block
 func (b *Block) Hash() common.Hash {
-	return b.merkle.Root()
+	return b.Merkle.Root
 }
 
 func (b *Block) MarshalJSON() ([]byte, error) {
@@ -74,7 +74,7 @@ func (b *Block) MarshalJSON() ([]byte, error) {
 
 	enc.hash = b.Hash()
 
-	for _, tx := range b.transactionSet {
+	for _, tx := range b.TransactionSet {
 		txJSON, err := tx.MarshalJSON()
 
 		if err != nil {
@@ -94,29 +94,29 @@ func (b *Block) Sign(privKey *ecdsa.PrivateKey) error {
 		return err
 	}
 
-	b.sig = sig
+	b.Sig = sig
 	return nil
 }
 
 // Sender returns address of block minder
 func (b *Block) Sender() (common.Address, error) {
-	return getSender(b.Hash().Bytes(), b.sig)
+	return getSender(b.Hash().Bytes(), b.Sig)
 }
 
 // unsignTransaction only contains requierd fields for hash function
 // TODO: change big.Int to uint64 to reduce txData size
 type txData struct {
-	BlkNum1   *big.Int        `json:"blkNum1"  rlp:"nil"`
-	TxIndex1  *big.Int        `json:"txIndex1"  rlp:"nil"`
-	OIndex1   *big.Int        `json:"oIndex1"  rlp:"nil"`
-	BlkNum2   *big.Int        `json:"blkNum2"  rlp:"nil"`
-	TxIndex2  *big.Int        `json:"txIndex2"  rlp:"nil"`
-	OIndex2   *big.Int        `json:"oIndex2"  rlp:"nil"`
+	BlkNum1   *big.Int        `json:"blkNum1"    rlp:"nil"`
+	TxIndex1  *big.Int        `json:"txIndex1"   rlp:"nil"`
+	OIndex1   *big.Int        `json:"oIndex1"    rlp:"nil"`
+	BlkNum2   *big.Int        `json:"blkNum2"    rlp:"nil"`
+	TxIndex2  *big.Int        `json:"txIndex2"   rlp:"nil"`
+	OIndex2   *big.Int        `json:"oIndex2"    rlp:"nil"`
 	NewOwner1 *common.Address `json:"newOwner1"  rlp:"nil"`
-	Amount1   *big.Int        `json:"amount1"  rlp:"nil"`
+	Amount1   *big.Int        `json:"amount1"    rlp:"nil"`
 	NewOwner2 *common.Address `json:"newOwner2"  rlp:"nil"`
-	Amount2   *big.Int        `json:"amount2"  rlp:"nil"`
-	Fee       *big.Int        `json:"fee"  rlp:"nil"`
+	Amount2   *big.Int        `json:"amount2"    rlp:"nil"`
+	Fee       *big.Int        `json:"fee"        rlp:"nil"`
 }
 
 // Transaction implements Plasma chain transaction

@@ -92,11 +92,11 @@ func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*Transaction, er
 		return nil, errors.New("No block with block number " + blkNum.String())
 	}
 
-	if txIndex.Cmp(big.NewInt(int64(len(bc.blocks[blkNum.Int64()].transactionSet)))) > 0 {
+	if txIndex.Cmp(big.NewInt(int64(len(bc.blocks[blkNum.Int64()].TransactionSet)))) > 0 {
 		return nil, errors.New("No transaction with txindex" + txIndex.String())
 	}
 
-	return bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()], nil
+	return bc.blocks[blkNum.Int64()].TransactionSet[txIndex.Int64()], nil
 }
 
 // TODO: broadcast new transaction to peers
@@ -110,7 +110,7 @@ func (bc *BlockChain) applyTransaction(tx *Transaction) error {
 	bc.markUtxoSpent(tx.data.BlkNum1, tx.data.TxIndex1, tx.data.OIndex1)
 	bc.markUtxoSpent(tx.data.BlkNum2, tx.data.TxIndex2, tx.data.OIndex2)
 
-	bc.currentBlock.transactionSet = append(bc.currentBlock.transactionSet, tx)
+	bc.currentBlock.TransactionSet = append(bc.currentBlock.TransactionSet, tx)
 	return nil
 }
 
@@ -220,9 +220,9 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 	}
 
 	if oIndex.Cmp(big.NewInt(0)) == 0 {
-		bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()].spent1 = true
+		bc.blocks[blkNum.Int64()].TransactionSet[txIndex.Int64()].spent1 = true
 	} else {
-		bc.blocks[blkNum.Int64()].transactionSet[txIndex.Int64()].spent2 = true
+		bc.blocks[blkNum.Int64()].TransactionSet[txIndex.Int64()].spent2 = true
 	}
 }
 
@@ -255,7 +255,7 @@ func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 		}
 	}
 
-	bc.currentBlock.blockNumber = big.NewInt(bc.currentBlockNumber.Int64())
+	bc.currentBlock.BlockNumber = big.NewInt(bc.currentBlockNumber.Int64())
 	bc.blocks = append(bc.blocks, bc.currentBlock)
 	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
 	bc.currentBlock = &Block{}
@@ -279,8 +279,8 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) (co
 	transactionSet := []*Transaction{tx}
 
 	b := &Block{
-		transactionSet: transactionSet,
-		blockNumber:    big.NewInt(bc.currentBlockNumber.Int64()),
+		TransactionSet: transactionSet,
+		BlockNumber:    big.NewInt(bc.currentBlockNumber.Int64()),
 	}
 	blkNum := *bc.currentBlockNumber
 

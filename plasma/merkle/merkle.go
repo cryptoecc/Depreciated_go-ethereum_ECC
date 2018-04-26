@@ -23,25 +23,25 @@ var (
 )
 
 type Node struct {
-	data  common.Hash
-	left  *Node
-	right *Node
+	Data  common.Hash
+	Left  *Node
+	Right *Node
 }
 
 func (n *Node) Bytes() []byte {
 	var b []byte
 
-	if n.left != nil {
-		b = append(b, n.left.Bytes()...)
+	if n.Left != nil {
+		b = append(b, n.Left.Bytes()...)
 	}
-	return n.data.Bytes()
+	return n.Data.Bytes()
 }
 
 func NewNode(data common.Hash, left, right *Node) *Node {
 	return &Node{
-		data:  data,
-		left:  left,
-		right: right,
+		Data:  data,
+		Left:  left,
+		Right: right,
 	}
 }
 
@@ -61,7 +61,7 @@ func (n Nodes) Hashes() []common.Hash {
 	var hashes []common.Hash
 
 	for _, node := range n {
-		hashes = append(hashes, node.data)
+		hashes = append(hashes, node.Data)
 	}
 
 	return hashes
@@ -69,7 +69,7 @@ func (n Nodes) Hashes() []common.Hash {
 
 func (n Nodes) Bytes() (b []byte) {
 	for _, node := range n {
-		b = append(b, node.data.Bytes()...)
+		b = append(b, node.Data.Bytes()...)
 	}
 
 	return b
@@ -105,10 +105,10 @@ func (p Proof) Bytes() (b []byte) {
 }
 
 type Merkle struct {
-	root   common.Hash
-	depth  uint16
-	leaves Nodes
-	tree   Tree
+	Root   common.Hash
+	Depth  uint16
+	Leaves Nodes
+	Tree   Tree
 }
 
 var EmptyHash = common.StringToHash("")
@@ -121,7 +121,7 @@ func NewMerkle(depth uint16, hashes []common.Hash) (*Merkle, error) {
 	numEmptyLeaves := numLeaves - len(hashes)
 
 	merkle := Merkle{
-		depth: depth,
+		Depth: depth,
 	}
 
 	if len(hashes) > numLeaves {
@@ -131,22 +131,22 @@ func NewMerkle(depth uint16, hashes []common.Hash) (*Merkle, error) {
 	for _, hash := range hashes {
 		node := NewNode(hash, nil, nil)
 
-		merkle.leaves = append(merkle.leaves, node)
+		merkle.Leaves = append(merkle.Leaves, node)
 	}
 
 	for i := 0; i < numEmptyLeaves; i++ {
-		merkle.leaves = append(merkle.leaves, EmptyNode)
+		merkle.Leaves = append(merkle.Leaves, EmptyNode)
 	}
 
-	merkle.tree = append(merkle.tree, merkle.leaves)
-	merkle.root = merkle.CreateTree(merkle.leaves)
+	merkle.Tree = append(merkle.Tree, merkle.Leaves)
+	merkle.Root = merkle.CreateTree(merkle.Leaves)
 
 	return &merkle, nil
 }
 
 func (m *Merkle) CreateTree(leaves Nodes) common.Hash {
 	if len(leaves) == 1 {
-		return leaves[0].data
+		return leaves[0].Data
 	}
 
 	d := sha3.NewKeccak256()
@@ -158,8 +158,8 @@ func (m *Merkle) CreateTree(leaves Nodes) common.Hash {
 		left, right := leaves[i], leaves[i+1]
 
 		d.Reset()
-		d.Write(left.data.Bytes())
-		d.Write(right.data.Bytes())
+		d.Write(left.Data.Bytes())
+		d.Write(right.Data.Bytes())
 
 		var combinedHash common.Hash
 
@@ -168,7 +168,7 @@ func (m *Merkle) CreateTree(leaves Nodes) common.Hash {
 		nextLeaves = append(nextLeaves, node)
 	}
 
-	m.tree = append(m.tree, nextLeaves)
+	m.Tree = append(m.Tree, nextLeaves)
 
 	return m.CreateTree(nextLeaves)
 }
@@ -189,7 +189,7 @@ func (m *Merkle) CheckMembership(hash common.Hash, proofByte []byte) error {
 
 	computedHash := hash.Bytes()
 
-	for i := 0; i < int(m.depth); i++ {
+	for i := 0; i < int(m.Depth); i++ {
 		segment := proof[i]
 
 		if index%2 == 0 {
@@ -201,7 +201,7 @@ func (m *Merkle) CheckMembership(hash common.Hash, proofByte []byte) error {
 		index = index / 2
 	}
 
-	if !bytes.Equal(computedHash, m.root.Bytes()) {
+	if !bytes.Equal(computedHash, m.Root.Bytes()) {
 		return invalidProof
 	}
 
@@ -217,7 +217,7 @@ func (m *Merkle) GenerateProof(hash common.Hash) (Proof, error) {
 
 	var proofBytes []byte
 
-	for i := 0; i < int(m.depth); i++ {
+	for i := 0; i < int(m.Depth); i++ {
 		var siblingIndex int
 
 		if index%2 == 0 {
@@ -228,7 +228,7 @@ func (m *Merkle) GenerateProof(hash common.Hash) (Proof, error) {
 
 		index = index / 2
 
-		proofBytes = append(proofBytes, m.tree[i][siblingIndex].data.Bytes()...)
+		proofBytes = append(proofBytes, m.Tree[i][siblingIndex].Data.Bytes()...)
 	}
 
 	return NewProof(proofBytes)
@@ -237,16 +237,12 @@ func (m *Merkle) GenerateProof(hash common.Hash) (Proof, error) {
 func (m *Merkle) Index(hash common.Hash) int {
 	ret := -1
 
-	for i, node := range m.leaves {
-		if bytes.Equal(node.data.Bytes(), hash.Bytes()) {
+	for i, node := range m.Leaves {
+		if bytes.Equal(node.Data.Bytes(), hash.Bytes()) {
 			return i
 		}
 	}
 	fmt.Print()
 
 	return ret
-}
-
-func (m *Merkle) Root() common.Hash {
-	return m.root
 }

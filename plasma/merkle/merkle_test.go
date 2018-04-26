@@ -13,7 +13,7 @@ func TestInitializeTreeWithoutLeaves(t *testing.T) {
 	f := func(depth int) {
 		merkle, _ := NewMerkle(uint16(depth), nil)
 
-		leaveBytes := merkle.leaves.Bytes()
+		leaveBytes := merkle.Leaves.Bytes()
 		emptyBytes := bytes.Repeat(Empty32Bytes,
 			int(math.Pow(2, float64(depth))))
 
@@ -47,7 +47,7 @@ func TestInitializeTreeWithLeaves(t *testing.T) {
 
 		merkle, _ := NewMerkle(uint16(depth), hashes)
 
-		leaveBytes := merkle.leaves.Bytes()
+		leaveBytes := merkle.Leaves.Bytes()
 		var targetBytes []byte
 
 		for _, hash := range hashes {
@@ -99,19 +99,19 @@ func TestEmptyRoot(t *testing.T) {
 	merkle3, _ := NewMerkle(3, nil)
 	merkle16, _ := NewMerkle(16, nil)
 
-	if root1.Hex() != merkle1.root.Hex() {
+	if root1.Hex() != merkle1.Root.Hex() {
 		t.Fatal("root1 has not matched")
 	}
-	if root2.Hex() != merkle2.root.Hex() {
+	if root2.Hex() != merkle2.Root.Hex() {
 		t.Fatal("root2 has not matched")
 	}
-	if root3.Hex() != merkle3.root.Hex() {
+	if root3.Hex() != merkle3.Root.Hex() {
 		t.Fatal("root3 has not matched")
 	}
 	if root3.Hex() != root3_2.Hex() {
 		t.Fatal("root3_2 has not matched")
 	}
-	if root16.Hex() != merkle16.root.Hex() {
+	if root16.Hex() != merkle16.Root.Hex() {
 		t.Fatal("root16 has not matched")
 	}
 }

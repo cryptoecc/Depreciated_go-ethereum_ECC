@@ -33,7 +33,7 @@ func TestMain(t *testing.T) {
 		&nullAddress, big0,
 		big0)
 
-	if b1.transactionSet[0].Hash() != tx1.Hash() {
+	if b1.TransactionSet[0].Hash() != tx1.Hash() {
 		t.Fatal("tx1 is not included into block1")
 	}
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
@@ -59,7 +59,7 @@ func TestMain(t *testing.T) {
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
 		t.Fatal("b2 sender and operator address mismatched")
 	}
-	if b2.transactionSet[0].Hash() != tx2.Hash() {
+	if b2.TransactionSet[0].Hash() != tx2.Hash() {
 		t.Fatal("tx2 is not included into block2")
 	}
 
@@ -97,10 +97,10 @@ func TestMain(t *testing.T) {
 		t.Fatal("Failed to submit block 3")
 	}
 	b3 := <-bc.newBlock
-	if b3.transactionSet[0].Hash() != tx3.Hash() {
+	if b3.TransactionSet[0].Hash() != tx3.Hash() {
 		t.Fatal("tx3 is not included into block3")
 	}
-	if b3.transactionSet[1].Hash() != tx4.Hash() {
+	if b3.TransactionSet[1].Hash() != tx4.Hash() {
 		t.Fatal("tx4 is not included into block3")
 	}
 
