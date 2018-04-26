@@ -18,12 +18,17 @@ var (
 	invalidSenderSignature       = errors.New("sender signature is invalid")
 	spentTransactionOutput       = errors.New("transaction output is already spent")
 	mismatchedTransactionAmounts = errors.New("sum of transaction intputs and outputs are not matched")
+
+	// Block / TX from peers
+	invalidBlockNumber = errors.New("new block has invalid block number. plasma chain may not be synced")
 )
 
 // BlockChain implements Plasma block chain service
 type BlockChain struct {
-	config              *Config
-	blocks              []*Block
+	config *Config
+	blocks []*Block
+
+	// TODO: store to DB
 	currentBlock        *Block   // block not mined yet
 	currentBlockNumber  *big.Int // block number of currentBlock
 	pendingTransactions []*Transaction
@@ -316,4 +321,18 @@ func (bc *BlockChain) addNewBlockListener(f func(blk *Block) error) error {
 			return nil
 		}
 	}
+}
+
+func (bc *BlockChain) addBlock(b *Block) error {
+	if bc.currentBlockNumber.Cmp(b.BlockNumber) != 0 {
+		return invalidBlockNumber
+	}
+
+	bc.blocks = append(bc.blocks, b)
+	bc.currentBlockNumber = big0.And(bc.currentBlockNumber, big1)
+
+	// channel needed?
+	// bc.newBlock <- b
+
+	return nil
 }

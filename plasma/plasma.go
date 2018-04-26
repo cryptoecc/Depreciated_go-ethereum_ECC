@@ -1,9 +1,12 @@
 package plasma
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"math/big"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -29,8 +32,12 @@ type Plasma struct {
 	transactOpts *bind.TransactOpts
 
 	// Channels
-	quit        chan bool
-	backendChan chan *ethclient.Client
+	quit           chan bool
+	backendCh      chan *ethclient.Client
+	operatorNodeCh chan *Peer
+
+	// Peers
+	peers map[*Peer]struct{} // Set of currently active peers
 
 	// Handlers
 	server     *p2p.Server
@@ -43,7 +50,8 @@ type Plasma struct {
 
 	ApiBackend *Backend
 
-	lock sync.RWMutex
+	lock     sync.RWMutex
+	peerLock sync.RWMutex
 }
 
 func New(config *Config, accountManager *accounts.Manager) *Plasma {
@@ -57,13 +65,15 @@ func New(config *Config, accountManager *accounts.Manager) *Plasma {
 		accountManager: accountManager,
 	}
 
-	pls.backendChan = make(chan *ethclient.Client)
+	pls.backendCh = make(chan *ethclient.Client)
 	pls.quit = make(chan bool)
+	pls.peers = make(map[*Peer]struct{})
+	pls.operatorNodeCh = make(chan *Peer, 1)
 
 	pls.protocol = p2p.Protocol{
 		Name:    ProtocolName,
 		Version: uint(ProtocolVersion),
-		Length:  NumberOfMessageCodes,
+		Length:  numberOfMessageCodes,
 		Run:     pls.HandlePeer,
 		NodeInfo: func() interface{} {
 			return map[string]interface{}{
@@ -71,6 +81,9 @@ func New(config *Config, accountManager *accounts.Manager) *Plasma {
 				"currentBlock": pls.CurrentBlockNumber(),
 				"numPeers":     len(pls.getPeers()),
 			}
+		},
+		PeerInfo: func(id discover.NodeID) interface{} {
+			return id
 		},
 	}
 
@@ -83,7 +96,7 @@ func (pls *Plasma) RegisterRpcClient(rpcClient *rpc.Client) {
 	if rpcClient == nil {
 		log.Warn("[Plasma] Cannot register nil RPC client to Plasma")
 	} else {
-		pls.backendChan <- ethclient.NewClient(rpcClient)
+		pls.backendCh <- ethclient.NewClient(rpcClient)
 	}
 }
 
@@ -92,7 +105,7 @@ func (pls *Plasma) RegisterClient(backend *ethclient.Client) {
 	if backend == nil {
 		log.Warn("[Plasma] Cannot register nil endpoint to Plasma")
 	} else {
-		pls.backendChan <- backend
+		pls.backendCh <- backend
 	}
 }
 
@@ -100,10 +113,6 @@ func (pls *Plasma) RegisterClient(backend *ethclient.Client) {
 // of the Plasma protocol.
 func (pls *Plasma) Start(server *p2p.Server) error {
 	pls.server = server
-
-	if pls.isOperator() {
-		pls.config.OperatorNode = server.Self()
-	}
 
 	go pls.run()
 
@@ -142,8 +151,57 @@ func (pls *Plasma) APIs() []rpc.API {
 
 // HandlePeer is called by the underlying P2P layer when the plasma sub-protocol
 // connection is negotiated.
-func (pls *Plasma) HandlePeer(peer *p2p.Peer, rw p2p.MsgReadWriter) error {
-	return nil
+// XXX the life sycle of HandlePeer function is same as the p2p connection
+func (pls *Plasma) HandlePeer(remote *p2p.Peer, rw p2p.MsgReadWriter) error {
+	peer := newPeer(pls, remote, rw)
+
+	// TODO: check peer is already registered
+
+	// registger peer
+	pls.peerLock.Lock()
+	pls.peers[peer] = struct{}{}
+	pls.peerLock.Unlock()
+
+	// unregister peer
+	defer func() {
+		pls.peerLock.Lock()
+		delete(pls.peers, peer)
+		pls.peerLock.Unlock()
+	}()
+
+	// pls handshake
+	if err := peer.handshake(); err != nil {
+		return err
+	}
+
+	// if peer is operator, record it
+	peerPubkeyByte := peer.peer.ID()
+	peerPubKey, _ := peerPubkeyByte.Pubkey()
+	peerAddress := crypto.PubkeyToAddress(*peerPubKey)
+
+	log.Info("[Plasma] peer connected", "localAddr", peer.peer.LocalAddr(), "remoteAddr", peer.peer.RemoteAddr(), "id", peer.peer.ID().String())
+
+	if peerAddress == pls.config.OperatorAddress {
+		pls.config.OperatorNode = peer
+
+		var buffer bytes.Buffer
+
+		buffer.WriteString("enode://")
+		buffer.WriteString(peerPubkeyByte.String())
+		buffer.WriteString("@")
+		buffer.WriteString(peer.peer.RemoteAddr().String())
+
+		pls.config.OperatorNodeURL = buffer.String()
+		log.Info("[Plasma] operator node url", "url", pls.config.OperatorNodeURL)
+
+		// TODO: should use channel?
+		pls.operatorNodeCh <- peer
+	}
+
+	peer.start()
+	defer peer.stop()
+
+	return pls.handlePeer(peer)
 }
 
 func (pls *Plasma) CurrentBlockNumber() uint64 {
@@ -156,7 +214,7 @@ func (pls *Plasma) getPeers() []*discover.Node {
 
 func (pls *Plasma) run() {
 	select {
-	case backend := <-pls.backendChan:
+	case backend := <-pls.backendCh:
 		pls.backend = backend
 		log.Info("[Plasma] Ethereum jsonrpc backend attached")
 	case <-pls.quit:
@@ -182,6 +240,12 @@ loop:
 
 // TODO: If operator, deploy or load contract. If not operator, load contract
 func (pls *Plasma) initialize() error {
+	// wait until ethereum is synced
+	if err := pls.waitEthSynced(); err != nil {
+		log.Info("[Plasma] Failed to wait Eth syncing", "err", err)
+		return err
+	}
+
 	// deploy or load plasma contract
 	deployed, err := pls.checkContractDepoyed()
 
@@ -200,7 +264,7 @@ func (pls *Plasma) initialize() error {
 		log.Info("[Plasma] Contract is already deployed", "address", pls.config.ContractAddress)
 	} else {
 		if !pls.isOperator() {
-			return fmt.Errorf("[Plasma] Contract is not deployed yet at", pls.config.ContractAddress)
+			return fmt.Errorf("[Plasma] Contract is not deployed yet at", "contract", pls.config.ContractAddress)
 		}
 
 		pls.transactOpts = bind.NewKeyedTransactor(pls.config.OperatorPrivateKey)
@@ -228,6 +292,39 @@ func (pls *Plasma) initialize() error {
 	}
 
 	return nil
+}
+
+// waitEthSynced waits until all of ethereum blockchain data is downloaded
+func (pls *Plasma) waitEthSynced() error {
+	// Assume operator node run only after ethereum synced
+	if pls.isOperator() {
+		return nil
+	}
+
+	// Wait operator peer is conencted
+	<-pls.operatorNodeCh
+
+	// Wait until syncing is finished
+	for {
+		time.Sleep(time.Second * 10)
+		result, err := pls.backend.SyncProgress(pls.context)
+
+		fmt.Println(result, err)
+
+		if err != nil {
+			return err
+		}
+
+		if result != nil {
+			log.Info("[Plasma] wait until eth is synced", "current", result.CurrentBlock, "highest", result.HighestBlock)
+		}
+
+		if result == nil {
+			log.Info("[Plasma] Ethereum is synced")
+			return nil
+		}
+
+	}
 }
 
 func (pls *Plasma) checkContractDepoyed() (bool, error) {
@@ -277,9 +374,51 @@ func (pls *Plasma) listenDeposit() error {
 			case deposit := <-sink:
 				if deposit != nil {
 					log.Info("[Plasma] New deposit on plasma contract", "depositor", deposit.Depositor, "amount", deposit.Amount)
-					if _, err := pls.blockchain.newDeposit(deposit.Amount, &deposit.Depositor); err != nil {
-						log.Warn("[Plasma] Failed to add new deposit from rootchain", err)
+
+					if pls.isOperator() {
+						// operator seal new deposit block
+						if _, err := pls.blockchain.newDeposit(deposit.Amount, &deposit.Depositor); err != nil {
+							log.Warn("[Plasma] Failed to add new deposit from rootchain", "err", err)
+						}
+					} else {
+						// other node request deposit block
+						// TODO: use request pool. operator will send the block before expected request arrived.
+						if pls.config.OperatorNode == nil {
+							log.Warn("[Plasma] Operator Node is nil")
+							continue
+						}
+						query := getBlockData{
+							Number: pls.CurrentBlockNumber(),
+						}
+
+						log.Info("[Plasma] requesting new block", "number", query.Number)
+
+						go func() {
+							p2p.Send(pls.config.OperatorNode.rw, getBlockCode, query)
+						}()
+
+						packet, err := pls.config.OperatorNode.rw.ReadMsg()
+
+						if err == nil {
+							log.Warn("[Plasma] Failed to fetch deposit block", "err", err)
+							continue
+						}
+
+						if packet.Code != newBlockCode {
+							log.Warn("[Plasma] Client expected to receive new deposit block.", "code", packet.Code)
+							continue
+						}
+
+						var newBlockQuery newBlockData
+						if err := packet.Decode(&newBlockQuery); err != nil {
+							log.Warn("[Plasma] Failed to decode new block data", "err", err)
+							continue
+						}
+
+						pls.blockchain.addBlock(newBlockQuery.Block)
+						log.Info("[Plasma] New deposit block fetched", "hash", newBlockQuery.Block.Hash())
 					}
+
 				}
 
 			case <-pls.quit:
@@ -321,4 +460,65 @@ func (pls *Plasma) sign(hash []byte, from common.Address) ([]byte, error) {
 	}
 
 	return wallet.SignHash(account, hash)
+}
+
+// handlePeer handles p2p message after handshake
+func (pls *Plasma) handlePeer(peer *Peer) error {
+	rw := peer.rw
+
+	for {
+		packet, err := rw.ReadMsg()
+
+		if err != nil {
+			log.Warn("[Plasma] message loop", "peer", peer.ID(), "err", err)
+			return err
+		}
+
+		switch packet.Code {
+		case statusCode:
+			// this should not happen, but no need to panic; just ignore this message.
+			log.Warn("unxepected status message received", "peer", peer.ID())
+		case operatorCode:
+			if !pls.isOperator() && pls.config.OperatorNodeURL == "" {
+				var query operatorData
+				if err := packet.Decode(&query); err != nil {
+					return errResp(ErrDecode, "%v: %v", packet, err)
+				}
+
+				pls.config.OperatorNodeURL = query.NodeURL
+			}
+		case getBlockCode:
+			var query getBlockData
+			if err := packet.Decode(&query); err != nil {
+				return errResp(ErrDecode, "%v: %v", packet, err)
+			}
+
+			block, err := pls.blockchain.getBlock(big.NewInt(int64(query.Number)))
+
+			if err != nil {
+				return errResp(ErrDecode, "%v: %v", packet, err)
+			}
+
+			payload := newBlockData{
+				Block: block,
+			}
+
+			p2p.Send(peer.rw, newBlockCode, payload)
+		case newBlockCode:
+
+			var payload newBlockData
+
+			if err := packet.Decode(&payload); err != nil {
+				return errResp(ErrDecode, "%v: %v", packet, err)
+			}
+
+			rawblock := payload.Block
+
+			if err := pls.blockchain.addBlock(rawblock); err != nil {
+				return errResp(ErrDecode, "%v: %v", packet, err)
+			}
+
+			log.Info("[Plasma] imported new block", "hash", rawblock.Hash(), "peer", peer.ID())
+		}
+	}
 }
