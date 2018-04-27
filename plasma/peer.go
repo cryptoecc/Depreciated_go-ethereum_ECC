@@ -57,7 +57,7 @@ func (p *Peer) handshake() error {
 			HighestEthBlock: 0, // TODO: read ethereum highest block
 		}
 
-		errc <- p2p.Send(p.rw, statusCode, query)
+		errc <- p2p.Send(p.rw, StatusCode, query)
 	}()
 
 	// Fetch the remote status packet and verify protocol match
@@ -66,7 +66,7 @@ func (p *Peer) handshake() error {
 	if err != nil {
 		return err
 	}
-	if packet.Code != statusCode {
+	if packet.Code != StatusCode {
 		return fmt.Errorf("peer [%x] sent packet %x before status packet", p.ID(), packet.Code)
 	}
 	var query statusData

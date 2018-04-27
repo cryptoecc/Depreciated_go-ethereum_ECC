@@ -28,7 +28,10 @@ type Plasma struct {
 	protocol p2p.Protocol
 	context  context.Context
 
-	rootchain    *contract.RootChain
+	// RootCHain contract binding
+	rootchain *contract.RootChain
+
+	// options to send ethereum transcation
 	transactOpts *bind.TransactOpts
 
 	// Channels
@@ -42,18 +45,19 @@ type Plasma struct {
 	// Handlers
 	server     *p2p.Server
 	backend    *ethclient.Client // actual rpc backend
-	blockchain *BlockChain
-	downloader *Downloader
+	blockchain *BlockChain       // Plasma blockchain
+	downloader *Downloader       // Plasma downloader (TODO: implements this)
 
 	eventMux       *event.TypeMux
-	accountManager *accounts.Manager
+	accountManager *accounts.Manager // node account manager
 
-	ApiBackend *Backend
+	ApiBackend *Backend // pls api backend
 
 	lock     sync.RWMutex
 	peerLock sync.RWMutex
 }
 
+// New creates Plasma instance
 func New(config *Config, accountManager *accounts.Manager) *Plasma {
 	if config == nil {
 		config = &DefaultConfig
@@ -73,7 +77,7 @@ func New(config *Config, accountManager *accounts.Manager) *Plasma {
 	pls.protocol = p2p.Protocol{
 		Name:    ProtocolName,
 		Version: uint(ProtocolVersion),
-		Length:  numberOfMessageCodes,
+		Length:  NumberOfMessageCodes,
 		Run:     pls.HandlePeer,
 		NodeInfo: func() interface{} {
 			return map[string]interface{}{
@@ -92,6 +96,7 @@ func New(config *Config, accountManager *accounts.Manager) *Plasma {
 	return pls
 }
 
+// RegisterRpcClient takes node's rpc client to register ethclient as plasma's ethereum backend
 func (pls *Plasma) RegisterRpcClient(rpcClient *rpc.Client) {
 	if rpcClient == nil {
 		log.Warn("[Plasma] Cannot register nil RPC client to Plasma")
@@ -100,7 +105,7 @@ func (pls *Plasma) RegisterRpcClient(rpcClient *rpc.Client) {
 	}
 }
 
-// RegisterClient register endpoint of ethereum jsonrpc for Plasma single node
+// RegisterClient registers endpoint of ethereum jsonrpc for Plasma single node
 func (pls *Plasma) RegisterClient(backend *ethclient.Client) {
 	if backend == nil {
 		log.Warn("[Plasma] Cannot register nil endpoint to Plasma")
@@ -204,6 +209,7 @@ func (pls *Plasma) HandlePeer(remote *p2p.Peer, rw p2p.MsgReadWriter) error {
 	return pls.handlePeer(peer)
 }
 
+// CurrentBlockNumber returns currnt block number + 1 on plasma chain
 func (pls *Plasma) CurrentBlockNumber() uint64 {
 	return pls.blockchain.getCurrentBlockNumber().Uint64()
 }
@@ -394,7 +400,7 @@ func (pls *Plasma) listenDeposit() error {
 						log.Info("[Plasma] requesting new block", "number", query.Number)
 
 						go func() {
-							p2p.Send(pls.config.OperatorNode.rw, getBlockCode, query)
+							p2p.Send(pls.config.OperatorNode.rw, GetBlockCode, query)
 						}()
 
 						packet, err := pls.config.OperatorNode.rw.ReadMsg()
@@ -404,7 +410,7 @@ func (pls *Plasma) listenDeposit() error {
 							continue
 						}
 
-						if packet.Code != newBlockCode {
+						if packet.Code != NewBlockCode {
 							log.Warn("[Plasma] Client expected to receive new deposit block.", "code", packet.Code)
 							continue
 						}
@@ -451,6 +457,7 @@ func (pls *Plasma) addSubmitListener() error {
 	return pls.blockchain.addNewBlockListener(listener)
 }
 
+// sign any bytes from unlocked ethereum account
 func (pls *Plasma) sign(hash []byte, from common.Address) ([]byte, error) {
 	// Look up the wallet containing the requested signer
 	account := accounts.Account{Address: from}
@@ -475,10 +482,10 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 		}
 
 		switch packet.Code {
-		case statusCode:
+		case StatusCode:
 			// this should not happen, but no need to panic; just ignore this message.
 			log.Warn("unxepected status message received", "peer", peer.ID())
-		case operatorCode:
+		case OperatorCode:
 			if !pls.isOperator() && pls.config.OperatorNodeURL == "" {
 				var query operatorData
 				if err := packet.Decode(&query); err != nil {
@@ -487,7 +494,7 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 
 				pls.config.OperatorNodeURL = query.NodeURL
 			}
-		case getBlockCode:
+		case GetBlockCode:
 			var query getBlockData
 			if err := packet.Decode(&query); err != nil {
 				return errResp(ErrDecode, "%v: %v", packet, err)
@@ -503,8 +510,8 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 				Block: block,
 			}
 
-			p2p.Send(peer.rw, newBlockCode, payload)
-		case newBlockCode:
+			p2p.Send(peer.rw, NewBlockCode, payload)
+		case NewBlockCode:
 
 			var payload newBlockData
 

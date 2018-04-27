@@ -11,12 +11,12 @@ const (
 	ProtocolVersionStr = "1"
 	ProtocolName       = "pls"
 
-	statusCode           = 0x01 // used by plasma protocol
-	operatorCode         = 0x02 // operator node info
-	newBlockCode         = 0x03 // broadcast block
-	newTransactionCode   = 0x04 // broadcast TX
-	getBlockCode         = 0x05 // request block by hash or number
-	numberOfMessageCodes = 0x06
+	StatusCode           = 0x01 // used by plasma protocol
+	OperatorCode         = 0x02 // operator node info
+	NewBlockCode         = 0x03 // broadcast block
+	NewTransactionCode   = 0x04 // broadcast TX
+	GetBlockCode         = 0x05 // request block by hash or number
+	NumberOfMessageCodes = 0x06
 
 	MaxMessageSize        = uint32(10 * 1024 * 1024) // maximum accepted size of a message.
 	DefaultMaxMessageSize = uint32(1024 * 1024)
@@ -29,6 +29,11 @@ const (
 	ErrDecode
 	ErrInvalidMsgCode
 	ErrProtocolVersionMismatch
+	ErrNetworkIdMismatch
+	ErrGenesisBlockMismatch
+	ErrNoStatusMsg
+	ErrExtraStatusMsg
+	ErrSuspendedPeer
 )
 
 var (
