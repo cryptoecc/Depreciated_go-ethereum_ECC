@@ -286,6 +286,12 @@ func (pls *Plasma) initialize() error {
 		log.Info("[Plasma] Contract deployed", "hash", tx.Hash(), "contract", address)
 	}
 
+	// wait until plasma chain is synced
+	if err := pls.waitPlsSynced(); err != nil {
+		log.Warn("[Plasma] Failed to wait PLS syncing", "err", err)
+		return err
+	}
+
 	// run deposit listener
 	err = pls.listenDeposit()
 	if err != nil {
@@ -331,6 +337,29 @@ func (pls *Plasma) waitEthSynced() error {
 		}
 
 	}
+}
+
+func (pls *Plasma) waitPlsSynced() error {
+	// operator doesn't have to be synced.
+	if pls.isOperator() {
+		return nil
+	}
+
+	callOpts := bind.CallOpts{
+		Pending: false,
+		Context: pls.context,
+	}
+
+	localBlkNum := pls.blockchain.getCurrentBlockNumber()
+	remoteBlkNum, err := pls.rootchain.CurrentChildBlock(&callOpts)
+
+	if err != nil {
+		return nil
+	}
+
+	log.Info("[Plasma] Request plasma block", "localBlkNum", localBlkNum, "remoteBlkNum", remoteBlkNum)
+
+	return nil
 }
 
 func (pls *Plasma) checkContractDepoyed() (bool, error) {
@@ -383,7 +412,7 @@ func (pls *Plasma) listenDeposit() error {
 
 					if pls.isOperator() {
 						// operator seal new deposit block
-						if _, err := pls.blockchain.newDeposit(deposit.Amount, &deposit.Depositor); err != nil {
+						if _, err := pls.blockchain.newDeposit(deposit.Amount, &deposit.Depositor, deposit.DepositBlock); err != nil {
 							log.Warn("[Plasma] Failed to add new deposit from rootchain", "err", err)
 						}
 					} else {

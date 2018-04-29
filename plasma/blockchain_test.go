@@ -17,17 +17,18 @@ func TestMain(t *testing.T) {
 	initialize(t)
 
 	// deposit 1
+	blkNum1 := big.NewInt(1)
 	amount := big.NewInt(1000)
 	owner1, owner1Key := addrs[0], keys[0]
 
-	if _, err := bc.newDeposit(amount, owner1); err != nil {
+	if _, err := bc.newDeposit(amount, owner1, blkNum1); err != nil {
 		t.Fatal("Failed to create new deposit", err)
 	}
 
 	// deposit transaction 1
 	b1 := <-bc.newBlock
 	tx1 := NewTransaction(
-		big0, big0, big0,
+		blkNum1, big0, big0,
 		big0, big0, big0,
 		owner1, amount,
 		&nullAddress, big0,
@@ -36,21 +37,30 @@ func TestMain(t *testing.T) {
 	if b1.TransactionSet[0].Hash() != tx1.Hash() {
 		t.Fatal("tx1 is not included into block1")
 	}
+	if b1.TransactionSet[0].data.BlkNum1.Cmp(blkNum1) != 0 {
+		t.Fatal("tx1 has wrong block number")
+	}
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
 		t.Fatal("b1 sender and operator address mismatched")
 	}
+	if tx, err := bc.getTransaction(big1, big0); err != nil {
+		t.Fatal("bc failed to get tx1", err)
+	} else if tx.Hash() != tx1.Hash() {
+		t.Fatal("what's wrong")
+	}
 
 	// deposit 2
+	blkNum2 := big.NewInt(2)
 	owner2, owner2Key := addrs[1], keys[1]
 
-	if _, err := bc.newDeposit(big.NewInt(1000), owner2); err != nil {
+	if _, err := bc.newDeposit(big.NewInt(1000), owner2, blkNum2); err != nil {
 		t.Fatal("Failed to create new deposit", err)
 	}
 
 	// deposit transaction 2
 	b2 := <-bc.newBlock
 	tx2 := NewTransaction(
-		big0, big0, big0,
+		blkNum2, big0, big0,
 		big0, big0, big0,
 		owner2, big.NewInt(1000),
 		&nullAddress, big0,
@@ -59,13 +69,21 @@ func TestMain(t *testing.T) {
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
 		t.Fatal("b2 sender and operator address mismatched")
 	}
+	if b2.TransactionSet[0].data.BlkNum1.Cmp(blkNum2) != 0 {
+		t.Fatal("tx2 has wrong block number")
+	}
 	if b2.TransactionSet[0].Hash() != tx2.Hash() {
 		t.Fatal("tx2 is not included into block2")
+	}
+	if tx, err := bc.getTransaction(big.NewInt(2), big0); err != nil {
+		t.Fatal("bc failed to get tx2", err)
+	} else if tx.Hash() != tx2.Hash() {
+		t.Fatal("what's wrong")
 	}
 
 	// apply 1st transaction
 	tx3 := NewTransaction(
-		big.NewInt(1), big0, big0,
+		big1, big0, big0,
 		big0, big0, big0,
 		owner1, big.NewInt(900),
 		&nullAddress, big0,
@@ -74,6 +92,7 @@ func TestMain(t *testing.T) {
 	tx3.Sign1(owner1Key)
 
 	if err := bc.applyTransaction(tx3); err != nil {
+		t.Log(tx3.data)
 		t.Fatal("Failed to apply transaction 3", "error", err)
 	}
 
@@ -92,11 +111,17 @@ func TestMain(t *testing.T) {
 	}
 
 	// submit tx 3, 4
+	blkNum3 := big.NewInt(1000)
 	_, err := bc.submitBlock(bc.config.OperatorPrivateKey)
 	if err != nil {
 		t.Fatal("Failed to submit block 3")
 	}
 	b3 := <-bc.newBlock
+
+	if b3.BlockNumber.Cmp(blkNum3) != 0 {
+		t.Fatal("b3 has wrong block number", b3.BlockNumber)
+	}
+
 	if b3.TransactionSet[0].Hash() != tx3.Hash() {
 		t.Fatal("tx3 is not included into block3")
 	}
@@ -106,8 +131,8 @@ func TestMain(t *testing.T) {
 
 	// apply 3rd, 4th transaction
 	tx5 := NewTransaction(
-		big.NewInt(3), big0, big0,
-		big.NewInt(3), big1, big0,
+		big.NewInt(1000), big0, big0,
+		big.NewInt(1000), big1, big0,
 		owner1, big.NewInt(1700),
 		&nullAddress, big0,
 		big.NewInt(0))

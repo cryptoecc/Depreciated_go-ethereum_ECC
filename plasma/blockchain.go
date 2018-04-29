@@ -26,11 +26,12 @@ var (
 // BlockChain implements Plasma block chain service
 type BlockChain struct {
 	config *Config
-	blocks []*Block
+	blocks map[uint64]*Block
 
 	// TODO: store to DB
 	currentBlock        *Block   // block not mined yet
 	currentBlockNumber  *big.Int // block number of currentBlock
+	blockInterval       *big.Int // block submitted by operator
 	pendingTransactions []*Transaction
 
 	// Channels
@@ -44,9 +45,10 @@ type BlockChain struct {
 func NewBlockChain(config *Config) *BlockChain {
 	return &BlockChain{
 		config:              config,
-		blocks:              []*Block{nil}, // no block with block number 0
+		blocks:              make(map[uint64]*Block),
 		currentBlock:        &Block{},
-		currentBlockNumber:  big.NewInt(1),
+		currentBlockNumber:  big.NewInt(1000),
+		blockInterval:       big.NewInt(1000),
 		pendingTransactions: []*Transaction{},
 		newBlock:            make(chan *Block, 1),
 		quit:                make(chan struct{}),
@@ -73,11 +75,13 @@ func (bc *BlockChain) getBlock(blkNum *big.Int) (*Block, error) {
 		return nil, errors.New("No block with block number 0")
 	}
 
-	if blkNum.Cmp(big.NewInt(int64(len(bc.blocks)))) >= 0 {
+	b, ok := bc.blocks[blkNum.Uint64()]
+
+	if !ok {
 		return nil, errors.New("No block with block number " + blkNum.String())
 	}
 
-	return bc.blocks[blkNum.Int64()], nil
+	return b, nil
 }
 
 func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*Transaction, error) {
@@ -88,15 +92,19 @@ func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*Transaction, er
 		return nil, errors.New("No block with block number 0")
 	}
 
-	if blkNum.Cmp(big.NewInt(int64(len(bc.blocks)))) >= 0 {
+	b, ok := bc.blocks[blkNum.Uint64()]
+
+	if !ok {
 		return nil, errors.New("No block with block number " + blkNum.String())
 	}
 
-	if txIndex.Cmp(big.NewInt(int64(len(bc.blocks[blkNum.Int64()].TransactionSet)))) > 0 {
-		return nil, errors.New("No transaction with txindex" + txIndex.String())
+	if txIndex.Cmp(big.NewInt(int64(len(b.TransactionSet)))) > 0 {
+		return nil, errors.New("No transaction with tx index " + txIndex.String())
 	}
 
-	return bc.blocks[blkNum.Int64()].TransactionSet[txIndex.Int64()], nil
+	tx := b.TransactionSet[txIndex.Int64()]
+
+	return tx, nil
 }
 
 // TODO: broadcast new transaction to peers
@@ -220,9 +228,9 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 	}
 
 	if oIndex.Cmp(big.NewInt(0)) == 0 {
-		bc.blocks[blkNum.Int64()].TransactionSet[txIndex.Int64()].spent1 = true
+		bc.blocks[blkNum.Uint64()].TransactionSet[txIndex.Int64()].spent1 = true
 	} else {
-		bc.blocks[blkNum.Int64()].TransactionSet[txIndex.Int64()].spent2 = true
+		bc.blocks[blkNum.Uint64()].TransactionSet[txIndex.Int64()].spent2 = true
 	}
 }
 
@@ -256,8 +264,8 @@ func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 	}
 
 	bc.currentBlock.BlockNumber = big.NewInt(bc.currentBlockNumber.Int64())
-	bc.blocks = append(bc.blocks, bc.currentBlock)
-	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
+	bc.blocks[bc.currentBlockNumber.Uint64()] = bc.currentBlock
+	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, bc.blockInterval)
 	bc.currentBlock = &Block{}
 	bc.newBlock <- b
 
@@ -265,12 +273,12 @@ func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 }
 
 // only operator can add deposit transaction
-func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) (common.Hash, error) {
+func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address, depositBlock *big.Int) (common.Hash, error) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
 	tx := NewTransaction(
-		big0, big0, big0,
+		depositBlock, big0, big0,
 		big0, big0, big0,
 		depositor, amount,
 		&nullAddress, big0,
@@ -279,10 +287,9 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) (co
 	transactionSet := []*Transaction{tx}
 
 	b := &Block{
+		BlockNumber:    depositBlock,
 		TransactionSet: transactionSet,
-		BlockNumber:    big.NewInt(bc.currentBlockNumber.Int64()),
 	}
-	blkNum := *bc.currentBlockNumber
 
 	_, err := b.Seal()
 	if err != nil {
@@ -300,11 +307,10 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address) (co
 		}
 	}
 
-	bc.blocks = append(bc.blocks, b)
-	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, big.NewInt(1))
+	bc.blocks[depositBlock.Uint64()] = b
 	bc.newBlock <- b
 
-	log.Info("[Plasma Chain] New Deposit added", "blockNumber", blkNum.Uint64())
+	log.Info("[Plasma Chain] New Deposit added", "depositBlock", depositBlock)
 
 	return b.Hash(), nil
 }
@@ -315,7 +321,7 @@ func (bc *BlockChain) addNewBlockListener(f func(blk *Block) error) error {
 		select {
 		case blk := <-bc.newBlock:
 			if err := f(blk); err != nil {
-				log.Info("[Plasma Chain] Faield to listen new block", err)
+				log.Info("[Plasma Chain] Faield to listen new block", "err", err)
 			}
 		case <-bc.quit:
 			return nil
@@ -323,12 +329,13 @@ func (bc *BlockChain) addNewBlockListener(f func(blk *Block) error) error {
 	}
 }
 
+// add deposit block or synced block
 func (bc *BlockChain) addBlock(b *Block) error {
 	if bc.currentBlockNumber.Cmp(b.BlockNumber) != 0 {
 		return invalidBlockNumber
 	}
 
-	bc.blocks = append(bc.blocks, b)
+	bc.blocks[b.BlockNumber.Uint64()] = b
 	bc.currentBlockNumber = big0.And(bc.currentBlockNumber, big1)
 
 	// channel needed?
