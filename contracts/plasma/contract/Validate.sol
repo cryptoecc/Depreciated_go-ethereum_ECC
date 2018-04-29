@@ -1,4 +1,5 @@
-pragma solidity 0.4.18;
+pragma solidity ^0.4.18;
+
 import './ByteUtils.sol';
 import './ECRecovery.sol';
 
@@ -22,7 +23,7 @@ library Validate {
         bool check2 = true;
         if (blknum1 > 0) {
             check1 = ECRecovery.recover(txHash, sig1) == ECRecovery.recover(confirmationHash, confSig1);
-        } 
+        }
         if (blknum2 > 0) {
             bytes memory confSig2 = ByteUtils.slice(sigs, 195, 65);
             check2 = ECRecovery.recover(txHash, sig2) == ECRecovery.recover(confirmationHash, confSig2);

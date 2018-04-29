@@ -1,4 +1,5 @@
-pragma solidity 0.4.18;
+pragma solidity ^0.4.18;
+
 import './SafeMath.sol';
 import './Math.sol';
 import './RLP.sol';
@@ -29,7 +30,7 @@ contract RootChain {
     /*
      * Events
      */
-    event Deposit(address depositor, uint256 amount);
+    event Deposit(address depositor, uint256 amount, uint256 depositBlock);
     event Exit(address exitor, uint256 utxoPos);
 
     /*
@@ -128,7 +129,7 @@ contract RootChain {
     }
 
     // @dev Encode Plasma transaction in RLP using raw transaction
-    function encodeRLP() internal returns (bytes) {
+    function encodeRLP(uint256 depositBlock) internal returns (bytes) {
         uint256 i;
         bytes[] memory txItems = new bytes[](11);
 
@@ -141,7 +142,9 @@ contract RootChain {
 
         null20bytes = null20bytes.encodeBytes();
 
-        for (i = 0; i < 6; i++) {
+        txItems[0] = bytes32(depositBlock).bytes32ToBytes().encodeBytes();
+
+        for (i = 1; i < 6; i++) {
             txItems[i] = null0bytes;
         }
 
@@ -160,20 +163,25 @@ contract RootChain {
         payable
     {
         require(currentDepositBlock < childBlockInterval);
-        bytes memory txBytes = encodeRLP();
+
+        uint256 depositBlock = getDepositBlock();
+        bytes memory txBytes = encodeRLP(depositBlock);
         bytes32 zeroBytes;
         bytes32 root = keccak256(keccak256(txBytes), new bytes(130));
 
+        // TODO: apply updated deposit block hash
         for (uint256 i = 0; i < 16; i++) {
             root = keccak256(root, zeroBytes);
             zeroBytes = keccak256(zeroBytes, zeroBytes);
         }
-        childChain[getDepositBlock()] = childBlock({
+
+        childChain[depositBlock] = childBlock({
             root: root,
             created_at: block.timestamp
         });
+
         currentDepositBlock = currentDepositBlock.add(1);
-        Deposit(msg.sender, msg.value);
+        Deposit(msg.sender, msg.value, depositBlock);
     }
 
     // @dev Starts to exit a specified utxo
