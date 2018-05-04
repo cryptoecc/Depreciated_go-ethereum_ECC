@@ -34,10 +34,10 @@ func TestMain(t *testing.T) {
 		&nullAddress, big0,
 		big0)
 
-	if b1.TransactionSet[0].Hash() != tx1.Hash() {
+	if b1.data.TransactionSet[0].Hash() != tx1.Hash() {
 		t.Fatal("tx1 is not included into block1")
 	}
-	if b1.TransactionSet[0].data.BlkNum1.Cmp(blkNum1) != 0 {
+	if b1.data.TransactionSet[0].data.BlkNum1.Cmp(blkNum1) != 0 {
 		t.Fatal("tx1 has wrong block number")
 	}
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
@@ -69,10 +69,10 @@ func TestMain(t *testing.T) {
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
 		t.Fatal("b2 sender and operator address mismatched")
 	}
-	if b2.TransactionSet[0].data.BlkNum1.Cmp(blkNum2) != 0 {
+	if b2.data.TransactionSet[0].data.BlkNum1.Cmp(blkNum2) != 0 {
 		t.Fatal("tx2 has wrong block number")
 	}
-	if b2.TransactionSet[0].Hash() != tx2.Hash() {
+	if b2.data.TransactionSet[0].Hash() != tx2.Hash() {
 		t.Fatal("tx2 is not included into block2")
 	}
 	if tx, err := bc.getTransaction(big.NewInt(2), big0); err != nil {
@@ -118,14 +118,14 @@ func TestMain(t *testing.T) {
 	}
 	b3 := <-bc.newBlock
 
-	if b3.BlockNumber.Cmp(blkNum3) != 0 {
-		t.Fatal("b3 has wrong block number", b3.BlockNumber)
+	if b3.data.BlockNumber.Cmp(blkNum3) != 0 {
+		t.Fatal("b3 has wrong block number", b3.data.BlockNumber)
 	}
 
-	if b3.TransactionSet[0].Hash() != tx3.Hash() {
+	if b3.data.TransactionSet[0].Hash() != tx3.Hash() {
 		t.Fatal("tx3 is not included into block3")
 	}
-	if b3.TransactionSet[1].Hash() != tx4.Hash() {
+	if b3.data.TransactionSet[1].Hash() != tx4.Hash() {
 		t.Fatal("tx4 is not included into block3")
 	}
 

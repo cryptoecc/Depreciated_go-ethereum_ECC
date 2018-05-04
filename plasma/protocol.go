@@ -16,7 +16,9 @@ const (
 	NewBlockCode         = 0x03 // broadcast block
 	NewTransactionCode   = 0x04 // broadcast TX
 	GetBlockCode         = 0x05 // request block by hash or number
-	NumberOfMessageCodes = 0x06
+	PingCode             = 0x06 // ping
+	PongCode             = 0x07 // pong
+	NumberOfMessageCodes = 0x08
 
 	MaxMessageSize        = uint32(10 * 1024 * 1024) // maximum accepted size of a message.
 	DefaultMaxMessageSize = uint32(1024 * 1024)
@@ -60,5 +62,13 @@ type getBlockData struct {
 }
 
 type newBlockData struct {
+	Block *Block
+}
+
+type pingData struct {
+	Number uint64
+}
+
+type pongData struct {
 	Block *Block
 }

@@ -160,7 +160,9 @@ func (pls *Plasma) APIs() []rpc.API {
 func (pls *Plasma) HandlePeer(remote *p2p.Peer, rw p2p.MsgReadWriter) error {
 	peer := newPeer(pls, remote, rw)
 
-	// TODO: check peer is already registered
+	if _, ok := pls.peers[peer]; ok {
+		return nil
+	}
 
 	// registger peer
 	pls.peerLock.Lock()
@@ -298,9 +300,10 @@ func (pls *Plasma) initialize() error {
 		return err
 	}
 
-	err = pls.addSubmitListener()
-	if err != nil {
-		return err
+	if pls.isOperator() {
+		if err := pls.addSubmitListener(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -350,14 +353,59 @@ func (pls *Plasma) waitPlsSynced() error {
 		Context: pls.context,
 	}
 
-	localBlkNum := pls.blockchain.getCurrentBlockNumber()
-	remoteBlkNum, err := pls.rootchain.CurrentChildBlock(&callOpts)
+	localBlkNumBig := pls.blockchain.getCurrentBlockNumber()
+	remoteBlkNumBig, err := pls.rootchain.CurrentChildBlock(&callOpts)
 
 	if err != nil {
 		return nil
 	}
 
-	log.Info("[Plasma] Request plasma block", "localBlkNum", localBlkNum, "remoteBlkNum", remoteBlkNum)
+	log.Info("[Plasma] Checking plasma block", "localBlkNum", localBlkNumBig, "remoteBlkNum", remoteBlkNumBig)
+
+	localBlkNum := localBlkNumBig.Uint64()
+	remoteBlkNum := remoteBlkNumBig.Uint64()
+
+	childBlockInterval := pls.blockchain.blockInterval.Uint64()
+	var epochs, blocksToRequest []*big.Int
+
+	for blkNum := localBlkNum - childBlockInterval; blkNum <= remoteBlkNum-childBlockInterval; blkNum += childBlockInterval {
+		log.Info("[Plasma] adding epochs", "blkNum", blkNum)
+		epochs = append(epochs, big.NewInt(int64(blkNum)))
+	}
+
+	for _, blkNum := range epochs {
+		// submit-block
+		if blkNum.Cmp(big0) > 0 {
+			log.Info("[Plasma] add submit block request queue", "blkNum", blkNum)
+			blocksToRequest = append(blocksToRequest, blkNum)
+		}
+
+		// deposit-block
+		var i int64
+		for i = 1; i < int64(childBlockInterval); i++ {
+			depositBlockNumber := big0.Add(blkNum, big.NewInt(i))
+
+			res, err := pls.rootchain.ChildChain(&callOpts, depositBlockNumber)
+			log.Info("[Plasma] testing deposit block", "blkNum", depositBlockNumber)
+
+			if err != nil || res.CreatedAt == nil {
+				log.Info("[Plasma] stop", "err", err, "createdAt", res.CreatedAt, "root", res.Root)
+				break
+			}
+
+			log.Info("[Plasma] add deposit block request queue", "blkNum", depositBlockNumber)
+			blocksToRequest = append(blocksToRequest, depositBlockNumber)
+		}
+	}
+
+	for _, blkNum := range blocksToRequest {
+		query := getBlockData{
+			Number: blkNum.Uint64(),
+		}
+
+		log.Info("[Plasma] requset block from operator", "blockNumber", blkNum)
+		p2p.Send(pls.config.OperatorNode.rw, GetBlockCode, query)
+	}
 
 	return nil
 }
@@ -426,32 +474,29 @@ func (pls *Plasma) listenDeposit() error {
 							Number: pls.CurrentBlockNumber(),
 						}
 
+						p2p.Send(pls.config.OperatorNode.rw, GetBlockCode, query)
 						log.Info("[Plasma] requesting new block", "number", query.Number)
 
-						go func() {
-							p2p.Send(pls.config.OperatorNode.rw, GetBlockCode, query)
-						}()
-
-						packet, err := pls.config.OperatorNode.rw.ReadMsg()
-
-						if err == nil {
-							log.Warn("[Plasma] Failed to fetch deposit block", "err", err)
-							continue
-						}
-
-						if packet.Code != NewBlockCode {
-							log.Warn("[Plasma] Client expected to receive new deposit block.", "code", packet.Code)
-							continue
-						}
-
-						var newBlockQuery newBlockData
-						if err := packet.Decode(&newBlockQuery); err != nil {
-							log.Warn("[Plasma] Failed to decode new block data", "err", err)
-							continue
-						}
-
-						pls.blockchain.addBlock(newBlockQuery.Block)
-						log.Info("[Plasma] New deposit block fetched", "hash", newBlockQuery.Block.Hash())
+						// packet, err := pls.config.OperatorNode.rw.ReadMsg()
+						//
+						// if err == nil {
+						// 	log.Warn("[Plasma] Failed to fetch deposit block", "err", err)
+						// 	continue
+						// }
+						//
+						// if packet.Code != NewBlockCode {
+						// 	log.Warn("[Plasma] Client expected to receive new deposit block.", "code", packet.Code)
+						// 	continue
+						// }
+						//
+						// var newBlockQuery newBlockData
+						// if err := packet.Decode(&newBlockQuery); err != nil {
+						// 	log.Warn("[Plasma] Failed to decode new block data", "err", err)
+						// 	continue
+						// }
+						//
+						// pls.blockchain.addBlock(newBlockQuery.Block)
+						// log.Info("[Plasma] New deposit block fetched", "hash", newBlockQuery.Block.Hash())
 					}
 
 				}
@@ -470,9 +515,14 @@ func (pls *Plasma) listenDeposit() error {
 	return nil
 }
 
-// addSubmitListener send new block to root chain and peers
+// addSubmitListener send new sealded block to root chain
 func (pls *Plasma) addSubmitListener() error {
 	listener := func(blk *Block) error {
+		if len(blk.data.TransactionSet) == 1 && blk.data.TransactionSet[0].data.BlkNum1.Cmp(blk.data.BlockNumber) == 0 {
+			log.Info("[Plasma] New deposit block added", "hash", blk.Hash(), "blkNum", blk.data.BlockNumber)
+			return nil
+		}
+
 		tx, err := pls.rootchain.SubmitBlock(pls.transactOpts, blk.Hash())
 
 		if err != nil {
@@ -502,6 +552,19 @@ func (pls *Plasma) sign(hash []byte, from common.Address) ([]byte, error) {
 func (pls *Plasma) handlePeer(peer *Peer) error {
 	rw := peer.rw
 
+	go func(peer *Peer) {
+		for {
+			time.Sleep(time.Second * 1)
+			query := pingData{
+				Number: 10,
+			}
+
+			if err := p2p.Send(peer.rw, PingCode, query); err != nil {
+				log.Info("[Plasma] Failed to send pong message", "err", err)
+			}
+		}
+	}(peer)
+
 	for {
 		packet, err := rw.ReadMsg()
 
@@ -509,6 +572,8 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 			log.Warn("[Plasma] message loop", "peer", peer.ID(), "err", err)
 			return err
 		}
+
+		log.Info("[Plasma] p2p message received", "code", packet.Code)
 
 		switch packet.Code {
 		case StatusCode:
@@ -523,8 +588,9 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 
 				pls.config.OperatorNodeURL = query.NodeURL
 			}
-		case GetBlockCode:
+		case GetBlockCode: // request block
 			var query getBlockData
+
 			if err := packet.Decode(&query); err != nil {
 				return errResp(ErrDecode, "%v: %v", packet, err)
 			}
@@ -539,9 +605,12 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 				Block: block,
 			}
 
-			p2p.Send(peer.rw, NewBlockCode, payload)
-		case NewBlockCode:
+			err = p2p.Send(peer.rw, NewBlockCode, payload)
 
+			if err != nil {
+				log.Warn("[Plasma] Failed to send block", "blkNum", query.Number, "hash", query.Hash)
+			}
+		case NewBlockCode: // response block
 			var payload newBlockData
 
 			if err := packet.Decode(&payload); err != nil {
@@ -549,12 +618,47 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 			}
 
 			rawblock := payload.Block
+			log.Info("[Plasma] new block received", "hash", rawblock.Hash(), "blkNum", rawblock.data.BlockNumber)
 
 			if err := pls.blockchain.addBlock(rawblock); err != nil {
 				return errResp(ErrDecode, "%v: %v", packet, err)
 			}
 
 			log.Info("[Plasma] imported new block", "hash", rawblock.Hash(), "peer", peer.ID())
+		case PingCode:
+			var query pingData
+			if err := packet.Decode(&query); err != nil {
+				log.Info("[Plasma] Failed to decode ping", "err", err)
+				return errResp(ErrDecode, "%v: %v", packet, err)
+			}
+			log.Info("[Plasma] ping received. send pong", "peer", peer.ID(), "query", query.Number)
+
+			// get plasma block with number 1
+			blk, _ := peer.host.blockchain.getBlock(big1)
+
+			if blk == nil {
+				log.Info("[Plasma] No block with number 1. Do not pong")
+			} else {
+				payload := pongData{
+					Block: blk,
+				}
+
+				if err := p2p.Send(peer.rw, PongCode, payload); err != nil {
+					log.Info("[Plasma] Failed to send pong message", "err", err)
+					return errResp(ErrDecode, "%v: %v", packet, err)
+				}
+			}
+
+		case PongCode:
+			log.Info("[Plasma] pong received", "peer", peer.ID())
+
+			var query pongData
+			if err := packet.Decode(&query); err != nil {
+				log.Info("[Plasma] Failed to decode pong", "err", err)
+				return errResp(ErrDecode, "%v: %v", packet, err)
+			}
+			log.Info("[Plasma] pong received", "peer", peer.ID(), "blockNumber", query.Block.data.BlockNumber, "hash", query.Block.Hash())
+
 		}
 	}
 }

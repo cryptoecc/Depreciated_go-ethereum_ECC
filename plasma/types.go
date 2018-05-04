@@ -11,16 +11,23 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/sha3"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/plasma/merkle"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+type blockData struct {
+	BlockNumber    *big.Int       `json:"blockNumber"`
+	TransactionSet []*Transaction `json:"transactionSet"`
+	Sig            []byte         `json:"sig"`
+}
+
 // Block implements Plasma chiain block
 type Block struct {
-	BlockNumber    *big.Int
-	TransactionSet []*Transaction
-	Merkle         *merkle.Merkle // TODO: store in DB with caching
-	Sig            []byte
+	data   blockData
+	Merkle *merkle.Merkle `json:"merkle" rlp:"nil"` // TODO: store in DB with caching
+	hash   atomic.Value
+	size   atomic.Value
 }
 
 type blockJSONData struct {
@@ -31,25 +38,35 @@ type blockJSONData struct {
 func (b *Block) ToRPCResponse() map[string]interface{} {
 	var transactions []map[string]interface{}
 
-	for _, tx := range b.TransactionSet {
+	for _, tx := range b.data.TransactionSet {
 		transactions = append(transactions, tx.ToRPCResponse())
 	}
 
 	return map[string]interface{}{
 		"hash":         b.Merkle.Root,
-		"blockNumber":  b.BlockNumber,
+		"blockNumber":  b.data.BlockNumber,
 		"transactions": transactions,
 	}
 }
 
-func NewBlock() *Block {
-	return &Block{}
+func NewBlock(blkNum *big.Int, txSet []*Transaction, sig []byte) *Block {
+	data := blockData{
+		BlockNumber:    blkNum,
+		TransactionSet: txSet,
+		Sig:            sig,
+	}
+
+	block := Block{
+		data: data,
+	}
+
+	return &block
 }
 
 func (b *Block) Seal() (common.Hash, error) {
 	var hashes []common.Hash
 
-	for _, tx := range b.TransactionSet {
+	for _, tx := range b.data.TransactionSet {
 		hashes = append(hashes, tx.Hash())
 	}
 
@@ -66,15 +83,53 @@ func (b *Block) Seal() (common.Hash, error) {
 
 // Hash returns sha3 hash of Block
 func (b *Block) Hash() common.Hash {
-	return b.Merkle.Root
+	if hash := b.hash.Load(); hash != nil {
+		return hash.(common.Hash)
+	}
+	v := b.Merkle.Root
+	b.hash.Store(v)
+	return v
+}
+
+// EncodeRLP implements rlp.Encoder
+func (b *Block) EncodeRLP(w io.Writer) error {
+	return rlp.Encode(w, &b.data)
+}
+
+// DecodeRLP implements rlp.Decoder
+func (b *Block) DecodeRLP(s *rlp.Stream) error {
+	_, size, _ := s.Kind()
+
+	if err := s.Decode(&b.data); err != nil {
+		return err
+	}
+
+	b.size.Store(common.StorageSize(rlp.ListSize(size)))
+
+	var hashes []common.Hash
+
+	for _, tx := range b.data.TransactionSet {
+		hashes = append(hashes, tx.Hash())
+	}
+
+	merkle, err := merkle.NewMerkle(16, hashes)
+
+	if err != nil {
+		return err
+	}
+
+	b.Merkle = merkle
+
+	return nil
 }
 
 func (b *Block) MarshalJSON() ([]byte, error) {
+	log.Info("[Plasma types] Block.MarshalJSON()")
 	var enc blockJSONData
 
 	enc.hash = b.Hash()
 
-	for _, tx := range b.TransactionSet {
+	for _, tx := range b.data.TransactionSet {
 		txJSON, err := tx.MarshalJSON()
 
 		if err != nil {
@@ -94,13 +149,13 @@ func (b *Block) Sign(privKey *ecdsa.PrivateKey) error {
 		return err
 	}
 
-	b.Sig = sig
+	b.data.Sig = sig
 	return nil
 }
 
 // Sender returns address of block minder
 func (b *Block) Sender() (common.Address, error) {
-	return getSender(b.Hash().Bytes(), b.Sig)
+	return getSender(b.Hash().Bytes(), b.data.Sig)
 }
 
 // unsignTransaction only contains requierd fields for hash function

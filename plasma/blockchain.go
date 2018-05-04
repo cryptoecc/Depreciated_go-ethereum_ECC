@@ -98,11 +98,11 @@ func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*Transaction, er
 		return nil, errors.New("No block with block number " + blkNum.String())
 	}
 
-	if txIndex.Cmp(big.NewInt(int64(len(b.TransactionSet)))) > 0 {
+	if txIndex.Cmp(big.NewInt(int64(len(b.data.TransactionSet)))) > 0 {
 		return nil, errors.New("No transaction with tx index " + txIndex.String())
 	}
 
-	tx := b.TransactionSet[txIndex.Int64()]
+	tx := b.data.TransactionSet[txIndex.Int64()]
 
 	return tx, nil
 }
@@ -118,7 +118,7 @@ func (bc *BlockChain) applyTransaction(tx *Transaction) error {
 	bc.markUtxoSpent(tx.data.BlkNum1, tx.data.TxIndex1, tx.data.OIndex1)
 	bc.markUtxoSpent(tx.data.BlkNum2, tx.data.TxIndex2, tx.data.OIndex2)
 
-	bc.currentBlock.TransactionSet = append(bc.currentBlock.TransactionSet, tx)
+	bc.currentBlock.data.TransactionSet = append(bc.currentBlock.data.TransactionSet, tx)
 	return nil
 }
 
@@ -228,9 +228,9 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 	}
 
 	if oIndex.Cmp(big.NewInt(0)) == 0 {
-		bc.blocks[blkNum.Uint64()].TransactionSet[txIndex.Int64()].spent1 = true
+		bc.blocks[blkNum.Uint64()].data.TransactionSet[txIndex.Int64()].spent1 = true
 	} else {
-		bc.blocks[blkNum.Uint64()].TransactionSet[txIndex.Int64()].spent2 = true
+		bc.blocks[blkNum.Uint64()].data.TransactionSet[txIndex.Int64()].spent2 = true
 	}
 }
 
@@ -263,7 +263,7 @@ func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 		}
 	}
 
-	bc.currentBlock.BlockNumber = big.NewInt(bc.currentBlockNumber.Int64())
+	bc.currentBlock.data.BlockNumber = big.NewInt(bc.currentBlockNumber.Int64())
 	bc.blocks[bc.currentBlockNumber.Uint64()] = bc.currentBlock
 	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, bc.blockInterval)
 	bc.currentBlock = &Block{}
@@ -286,10 +286,7 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address, dep
 
 	transactionSet := []*Transaction{tx}
 
-	b := &Block{
-		BlockNumber:    depositBlock,
-		TransactionSet: transactionSet,
-	}
+	b := NewBlock(depositBlock, transactionSet, nil)
 
 	_, err := b.Seal()
 	if err != nil {
@@ -331,11 +328,11 @@ func (bc *BlockChain) addNewBlockListener(f func(blk *Block) error) error {
 
 // add deposit block or synced block
 func (bc *BlockChain) addBlock(b *Block) error {
-	if bc.currentBlockNumber.Cmp(b.BlockNumber) != 0 {
+	if bc.currentBlockNumber.Cmp(b.data.BlockNumber) != 0 {
 		return invalidBlockNumber
 	}
 
-	bc.blocks[b.BlockNumber.Uint64()] = b
+	bc.blocks[b.data.BlockNumber.Uint64()] = b
 	bc.currentBlockNumber = big0.And(bc.currentBlockNumber, big1)
 
 	// channel needed?
