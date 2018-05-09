@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/plasma/types"
 )
 
 var bc *BlockChain
@@ -27,17 +28,17 @@ func TestMain(t *testing.T) {
 
 	// deposit transaction 1
 	b1 := <-bc.newBlock
-	tx1 := NewTransaction(
+	tx1 := types.NewTransaction(
 		blkNum1, big0, big0,
 		big0, big0, big0,
 		owner1, amount,
 		&nullAddress, big0,
 		big0)
 
-	if b1.data.TransactionSet[0].Hash() != tx1.Hash() {
+	if b1.Data.TransactionSet[0].Hash() != tx1.Hash() {
 		t.Fatal("tx1 is not included into block1")
 	}
-	if b1.data.TransactionSet[0].data.BlkNum1.Cmp(blkNum1) != 0 {
+	if b1.Data.TransactionSet[0].Data.BlkNum1.Cmp(blkNum1) != 0 {
 		t.Fatal("tx1 has wrong block number")
 	}
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
@@ -59,7 +60,7 @@ func TestMain(t *testing.T) {
 
 	// deposit transaction 2
 	b2 := <-bc.newBlock
-	tx2 := NewTransaction(
+	tx2 := types.NewTransaction(
 		blkNum2, big0, big0,
 		big0, big0, big0,
 		owner2, big.NewInt(1000),
@@ -69,10 +70,10 @@ func TestMain(t *testing.T) {
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
 		t.Fatal("b2 sender and operator address mismatched")
 	}
-	if b2.data.TransactionSet[0].data.BlkNum1.Cmp(blkNum2) != 0 {
+	if b2.Data.TransactionSet[0].Data.BlkNum1.Cmp(blkNum2) != 0 {
 		t.Fatal("tx2 has wrong block number")
 	}
-	if b2.data.TransactionSet[0].Hash() != tx2.Hash() {
+	if b2.Data.TransactionSet[0].Hash() != tx2.Hash() {
 		t.Fatal("tx2 is not included into block2")
 	}
 	if tx, err := bc.getTransaction(big.NewInt(2), big0); err != nil {
@@ -82,7 +83,7 @@ func TestMain(t *testing.T) {
 	}
 
 	// apply 1st transaction
-	tx3 := NewTransaction(
+	tx3 := types.NewTransaction(
 		big1, big0, big0,
 		big0, big0, big0,
 		owner1, big.NewInt(900),
@@ -92,12 +93,12 @@ func TestMain(t *testing.T) {
 	tx3.Sign1(owner1Key)
 
 	if err := bc.applyTransaction(tx3); err != nil {
-		t.Log(tx3.data)
+		t.Log(tx3.Data)
 		t.Fatal("Failed to apply transaction 3", "error", err)
 	}
 
 	// apply 2nd transaction
-	tx4 := NewTransaction(
+	tx4 := types.NewTransaction(
 		big.NewInt(2), big0, big0,
 		big0, big0, big0,
 		owner1, big.NewInt(800),
@@ -118,19 +119,19 @@ func TestMain(t *testing.T) {
 	}
 	b3 := <-bc.newBlock
 
-	if b3.data.BlockNumber.Cmp(blkNum3) != 0 {
-		t.Fatal("b3 has wrong block number", b3.data.BlockNumber)
+	if b3.Data.BlockNumber.Cmp(blkNum3) != 0 {
+		t.Fatal("b3 has wrong block number", b3.Data.BlockNumber)
 	}
 
-	if b3.data.TransactionSet[0].Hash() != tx3.Hash() {
+	if b3.Data.TransactionSet[0].Hash() != tx3.Hash() {
 		t.Fatal("tx3 is not included into block3")
 	}
-	if b3.data.TransactionSet[1].Hash() != tx4.Hash() {
+	if b3.Data.TransactionSet[1].Hash() != tx4.Hash() {
 		t.Fatal("tx4 is not included into block3")
 	}
 
 	// apply 3rd, 4th transaction
-	tx5 := NewTransaction(
+	tx5 := types.NewTransaction(
 		big.NewInt(1000), big0, big0,
 		big.NewInt(1000), big1, big0,
 		owner1, big.NewInt(1700),

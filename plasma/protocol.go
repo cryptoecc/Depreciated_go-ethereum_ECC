@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/plasma/types"
 )
 
 const (
@@ -62,7 +63,7 @@ type getBlockData struct {
 }
 
 type newBlockData struct {
-	Block *Block
+	Block *types.Block
 }
 
 type pingData struct {
@@ -70,5 +71,5 @@ type pingData struct {
 }
 
 type pongData struct {
-	Block *Block
+	Block *types.Block
 }

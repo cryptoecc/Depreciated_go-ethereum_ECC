@@ -1,4 +1,4 @@
-package plasma
+package types
 
 import (
 	"crypto/ecdsa"
@@ -11,152 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/sha3"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/plasma/merkle"
 	"github.com/ethereum/go-ethereum/rlp"
 )
-
-type blockData struct {
-	BlockNumber    *big.Int       `json:"blockNumber"`
-	TransactionSet []*Transaction `json:"transactionSet"`
-	Sig            []byte         `json:"sig"`
-}
-
-// Block implements Plasma chiain block
-type Block struct {
-	data   blockData
-	Merkle *merkle.Merkle `json:"merkle" rlp:"nil"` // TODO: store in DB with caching
-	hash   atomic.Value
-	size   atomic.Value
-}
-
-type blockJSONData struct {
-	hash         common.Hash `json:"hash"`
-	transactions [][]byte    `json:"transactions"`
-}
-
-func (b *Block) ToRPCResponse() map[string]interface{} {
-	var transactions []map[string]interface{}
-
-	for _, tx := range b.data.TransactionSet {
-		transactions = append(transactions, tx.ToRPCResponse())
-	}
-
-	return map[string]interface{}{
-		"hash":         b.Merkle.Root,
-		"blockNumber":  b.data.BlockNumber,
-		"transactions": transactions,
-	}
-}
-
-func NewBlock(blkNum *big.Int, txSet []*Transaction, sig []byte) *Block {
-	data := blockData{
-		BlockNumber:    blkNum,
-		TransactionSet: txSet,
-		Sig:            sig,
-	}
-
-	block := Block{
-		data: data,
-	}
-
-	return &block
-}
-
-func (b *Block) Seal() (common.Hash, error) {
-	var hashes []common.Hash
-
-	for _, tx := range b.data.TransactionSet {
-		hashes = append(hashes, tx.Hash())
-	}
-
-	merkle, err := merkle.NewMerkle(16, hashes)
-
-	b.Merkle = merkle
-
-	if err != nil {
-		return common.HexToHash(""), err
-	}
-
-	return merkle.Root, nil
-}
-
-// Hash returns sha3 hash of Block
-func (b *Block) Hash() common.Hash {
-	if hash := b.hash.Load(); hash != nil {
-		return hash.(common.Hash)
-	}
-	v := b.Merkle.Root
-	b.hash.Store(v)
-	return v
-}
-
-// EncodeRLP implements rlp.Encoder
-func (b *Block) EncodeRLP(w io.Writer) error {
-	return rlp.Encode(w, &b.data)
-}
-
-// DecodeRLP implements rlp.Decoder
-func (b *Block) DecodeRLP(s *rlp.Stream) error {
-	_, size, _ := s.Kind()
-
-	if err := s.Decode(&b.data); err != nil {
-		return err
-	}
-
-	b.size.Store(common.StorageSize(rlp.ListSize(size)))
-
-	var hashes []common.Hash
-
-	for _, tx := range b.data.TransactionSet {
-		hashes = append(hashes, tx.Hash())
-	}
-
-	merkle, err := merkle.NewMerkle(16, hashes)
-
-	if err != nil {
-		return err
-	}
-
-	b.Merkle = merkle
-
-	return nil
-}
-
-func (b *Block) MarshalJSON() ([]byte, error) {
-	log.Info("[Plasma types] Block.MarshalJSON()")
-	var enc blockJSONData
-
-	enc.hash = b.Hash()
-
-	for _, tx := range b.data.TransactionSet {
-		txJSON, err := tx.MarshalJSON()
-
-		if err != nil {
-			return nil, err
-		}
-
-		enc.transactions = append(enc.transactions, txJSON)
-	}
-
-	return json.Marshal(&enc)
-}
-
-func (b *Block) Sign(privKey *ecdsa.PrivateKey) error {
-	sig, err := crypto.Sign(b.Hash().Bytes(), privKey)
-
-	if err != nil {
-		return err
-	}
-
-	b.data.Sig = sig
-	return nil
-}
-
-// Sender returns address of block minder
-func (b *Block) Sender() (common.Address, error) {
-	return getSender(b.Hash().Bytes(), b.data.Sig)
-}
 
 // unsignTransaction only contains requierd fields for hash function
 // TODO: change big.Int to uint64 to reduce txData size
@@ -176,7 +32,7 @@ type txData struct {
 
 // Transaction implements Plasma chain transaction
 type Transaction struct {
-	data txData
+	Data txData
 	sig1 []byte
 	sig2 []byte
 
@@ -188,6 +44,16 @@ type Transaction struct {
 	hash atomic.Value
 	size atomic.Value
 }
+
+func (tx *Transaction) Sig1() []byte { return tx.sig1 }
+func (tx *Transaction) Sig2() []byte { return tx.sig2 }
+func (tx *Transaction) Spent1() bool { return tx.spent1 }
+func (tx *Transaction) Spent2() bool { return tx.spent2 }
+
+func (tx *Transaction) SetSig1(sig []byte) { tx.sig1 = sig }
+func (tx *Transaction) SetSig2(sig []byte) { tx.sig2 = sig }
+func (tx *Transaction) SetSpent1()         { tx.spent1 = true }
+func (tx *Transaction) SetSpent2()         { tx.spent2 = true }
 
 type txJSONData struct {
 	blkNum1   *hexutil.Big    `json:"blkNum1"`
@@ -238,7 +104,7 @@ func NewTransaction(blkNum1, txIndex1, oIndex1, blkNum2, txIndex2, oIndex2 *big.
 	}
 
 	return &Transaction{
-		data:   data,
+		Data:   data,
 		sig1:   nil,
 		sig2:   nil,
 		spent1: false,
@@ -258,13 +124,13 @@ func (tx *Transaction) Hash() (h common.Hash) {
 
 // EncodeRLP implements rlp.Encoder
 func (tx *Transaction) EncodeRLP(w io.Writer) error {
-	return rlp.Encode(w, &tx.data)
+	return rlp.Encode(w, &tx.Data)
 }
 
 // DecodeRLP implements rlp.Decoder
 func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
 	_, size, _ := s.Kind()
-	err := s.Decode(&tx.data)
+	err := s.Decode(&tx.Data)
 	if err == nil {
 		tx.size.Store(common.StorageSize(rlp.ListSize(size)))
 	}
@@ -275,17 +141,17 @@ func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
 func (tx *Transaction) ToRPCResponse() map[string]interface{} {
 
 	ret := map[string]interface{}{
-		"blkNum1":   tx.data.BlkNum1,
-		"txIndex1":  tx.data.TxIndex1,
-		"oIndex1":   tx.data.OIndex1,
-		"blkNum2":   tx.data.BlkNum2,
-		"txIndex2":  tx.data.TxIndex2,
-		"oIndex2":   tx.data.OIndex2,
-		"newOwner1": tx.data.NewOwner1,
-		"amount1":   tx.data.Amount1,
-		"newOwner2": tx.data.NewOwner2,
-		"amount2":   tx.data.Amount2,
-		"fee":       tx.data.Fee,
+		"blkNum1":   tx.Data.BlkNum1,
+		"txIndex1":  tx.Data.TxIndex1,
+		"oIndex1":   tx.Data.OIndex1,
+		"blkNum2":   tx.Data.BlkNum2,
+		"txIndex2":  tx.Data.TxIndex2,
+		"oIndex2":   tx.Data.OIndex2,
+		"newOwner1": tx.Data.NewOwner1,
+		"amount1":   tx.Data.Amount1,
+		"newOwner2": tx.Data.NewOwner2,
+		"amount2":   tx.Data.Amount2,
+		"fee":       tx.Data.Fee,
 	}
 
 	if len(tx.sig1) > 0 {
@@ -307,17 +173,17 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 
 	var enc txJSONData
 
-	enc.blkNum1 = (*hexutil.Big)(tx.data.BlkNum1)
-	enc.txIndex1 = (*hexutil.Big)(tx.data.TxIndex1)
-	enc.oIndex1 = (*hexutil.Big)(tx.data.OIndex1)
-	enc.blkNum2 = (*hexutil.Big)(tx.data.BlkNum2)
-	enc.txIndex2 = (*hexutil.Big)(tx.data.TxIndex2)
-	enc.oIndex2 = (*hexutil.Big)(tx.data.OIndex2)
-	enc.newOwner1 = tx.data.NewOwner1
-	enc.amount1 = (*hexutil.Big)(tx.data.Amount1)
-	enc.newOwner2 = tx.data.NewOwner2
-	enc.amount2 = (*hexutil.Big)(tx.data.Amount2)
-	enc.fee = (*hexutil.Big)(tx.data.Fee)
+	enc.blkNum1 = (*hexutil.Big)(tx.Data.BlkNum1)
+	enc.txIndex1 = (*hexutil.Big)(tx.Data.TxIndex1)
+	enc.oIndex1 = (*hexutil.Big)(tx.Data.OIndex1)
+	enc.blkNum2 = (*hexutil.Big)(tx.Data.BlkNum2)
+	enc.txIndex2 = (*hexutil.Big)(tx.Data.TxIndex2)
+	enc.oIndex2 = (*hexutil.Big)(tx.Data.OIndex2)
+	enc.newOwner1 = tx.Data.NewOwner1
+	enc.amount1 = (*hexutil.Big)(tx.Data.Amount1)
+	enc.newOwner2 = tx.Data.NewOwner2
+	enc.amount2 = (*hexutil.Big)(tx.Data.Amount2)
+	enc.fee = (*hexutil.Big)(tx.Data.Fee)
 
 	enc.sig1 = tx.sig1
 	enc.sig2 = tx.sig2

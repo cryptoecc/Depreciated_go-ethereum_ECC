@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/plasma/types"
 )
 
 // PlasmaAPI provides an API to access Plasma related information.
@@ -90,7 +91,7 @@ func (api *PublicPlasmaAPI) ApplyTransaction(ctx context.Context, args TxArgs) (
 		return common.Hash{}, errors.New("Transaction input 2 should be signed by owner")
 	}
 
-	tx := NewTransaction(
+	tx := types.NewTransaction(
 		args.BlkNum1.ToInt(), args.TxIndex1.ToInt(), args.OIndex1.ToInt(),
 		args.BlkNum2.ToInt(), args.TxIndex2.ToInt(), args.OIndex2.ToInt(),
 		args.NewOwner1, args.Amount1.ToInt(),
@@ -106,7 +107,7 @@ func (api *PublicPlasmaAPI) ApplyTransaction(ctx context.Context, args TxArgs) (
 			return common.Hash{}, err
 		}
 
-		tx.sig1 = sig
+		tx.SetSig1(sig)
 	}
 
 	if args.From2 != nil {
@@ -116,7 +117,7 @@ func (api *PublicPlasmaAPI) ApplyTransaction(ctx context.Context, args TxArgs) (
 			return common.Hash{}, err
 		}
 
-		tx.sig2 = sig
+		tx.SetSig2(sig)
 	}
 
 	log.Info("[Plasma API] apply transaction", "txhash", tx.Hash(), "args", args)

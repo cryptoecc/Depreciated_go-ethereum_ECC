@@ -1,4 +1,4 @@
-package plasma
+package types
 
 import (
 	"testing"

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/plasma/types"
 )
 
 var (
@@ -26,16 +27,16 @@ var (
 // BlockChain implements Plasma block chain service
 type BlockChain struct {
 	config *Config
-	blocks map[uint64]*Block
+	blocks map[uint64]*types.Block
 
 	// TODO: store to DB
-	currentBlock        *Block   // block not mined yet
-	currentBlockNumber  *big.Int // block number of currentBlock
-	blockInterval       *big.Int // block submitted by operator
-	pendingTransactions []*Transaction
+	currentBlock        *types.Block // block not mined yet
+	currentBlockNumber  *big.Int     // block number of currentBlock
+	blockInterval       *big.Int     // block submitted by operator
+	pendingTransactions []*types.Transaction
 
 	// Channels
-	newBlock chan *Block
+	newBlock chan *types.Block
 	quit     chan struct{}
 
 	lock sync.RWMutex
@@ -45,17 +46,17 @@ type BlockChain struct {
 func NewBlockChain(config *Config) *BlockChain {
 	return &BlockChain{
 		config:              config,
-		blocks:              make(map[uint64]*Block),
-		currentBlock:        &Block{},
+		blocks:              make(map[uint64]*types.Block),
+		currentBlock:        &types.Block{},
 		currentBlockNumber:  big.NewInt(1000),
 		blockInterval:       big.NewInt(1000),
-		pendingTransactions: []*Transaction{},
-		newBlock:            make(chan *Block, 1),
+		pendingTransactions: []*types.Transaction{},
+		newBlock:            make(chan *types.Block, 1),
 		quit:                make(chan struct{}),
 	}
 }
 
-func (bc *BlockChain) getCurrentBlock() *Block {
+func (bc *BlockChain) getCurrentBlock() *types.Block {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 	return bc.currentBlock
@@ -67,7 +68,7 @@ func (bc *BlockChain) getCurrentBlockNumber() *big.Int {
 	return bc.currentBlockNumber
 }
 
-func (bc *BlockChain) getBlock(blkNum *big.Int) (*Block, error) {
+func (bc *BlockChain) getBlock(blkNum *big.Int) (*types.Block, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
@@ -84,7 +85,7 @@ func (bc *BlockChain) getBlock(blkNum *big.Int) (*Block, error) {
 	return b, nil
 }
 
-func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*Transaction, error) {
+func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*types.Transaction, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
@@ -98,84 +99,84 @@ func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*Transaction, er
 		return nil, errors.New("No block with block number " + blkNum.String())
 	}
 
-	if txIndex.Cmp(big.NewInt(int64(len(b.data.TransactionSet)))) > 0 {
+	if txIndex.Cmp(big.NewInt(int64(len(b.Data.TransactionSet)))) > 0 {
 		return nil, errors.New("No transaction with tx index " + txIndex.String())
 	}
 
-	tx := b.data.TransactionSet[txIndex.Int64()]
+	tx := b.Data.TransactionSet[txIndex.Int64()]
 
 	return tx, nil
 }
 
 // TODO: broadcast new transaction to peers
-func (bc *BlockChain) applyTransaction(tx *Transaction) error {
+func (bc *BlockChain) applyTransaction(tx *types.Transaction) error {
 	if err := bc.verifyTransaction(tx); err != nil {
 		log.Info("[Plasma Chain] Failed to verify transaction", "hash", tx.Hash(), "error", err)
 
 		return err
 	}
 
-	bc.markUtxoSpent(tx.data.BlkNum1, tx.data.TxIndex1, tx.data.OIndex1)
-	bc.markUtxoSpent(tx.data.BlkNum2, tx.data.TxIndex2, tx.data.OIndex2)
+	bc.markUtxoSpent(tx.Data.BlkNum1, tx.Data.TxIndex1, tx.Data.OIndex1)
+	bc.markUtxoSpent(tx.Data.BlkNum2, tx.Data.TxIndex2, tx.Data.OIndex2)
 
-	bc.currentBlock.data.TransactionSet = append(bc.currentBlock.data.TransactionSet, tx)
+	bc.currentBlock.Data.TransactionSet = append(bc.currentBlock.Data.TransactionSet, tx)
 	return nil
 }
 
-func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
+func (bc *BlockChain) verifyTransaction(tx *types.Transaction) error {
 	outputAmounts := big.NewInt(0)
 
-	if tx.data.Amount1 != nil {
-		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.Amount1)
+	if tx.Data.Amount1 != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.Data.Amount1)
 	}
 
-	if tx.data.Amount2 != nil {
-		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.Amount2)
+	if tx.Data.Amount2 != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.Data.Amount2)
 	}
 
-	if tx.data.Fee != nil {
-		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.data.Fee)
+	if tx.Data.Fee != nil {
+		outputAmounts = big.NewInt(0).Add(outputAmounts, tx.Data.Fee)
 
 	}
 
 	inputAmounts := big.NewInt(0)
 
-	if tx.data.BlkNum1.Cmp(big.NewInt(0)) > 0 {
-		preTX, err := bc.getTransaction(tx.data.BlkNum1, tx.data.TxIndex1)
+	if tx.Data.BlkNum1.Cmp(big.NewInt(0)) > 0 {
+		preTX, err := bc.getTransaction(tx.Data.BlkNum1, tx.Data.TxIndex1)
 
 		if err != nil {
 			return err
 		}
 
-		if err := verifyTxInput(tx, preTX, big0, tx.data.OIndex1); err != nil {
+		if err := verifyTxInput(tx, preTX, big0, tx.Data.OIndex1); err != nil {
 			return err
 		}
 
 		var inputAmount *big.Int
-		if tx.data.OIndex1.Cmp(big0) == 0 {
-			inputAmount = preTX.data.Amount1
+		if tx.Data.OIndex1.Cmp(big0) == 0 {
+			inputAmount = preTX.Data.Amount1
 		} else {
-			inputAmount = preTX.data.Amount2
+			inputAmount = preTX.Data.Amount2
 		}
 		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
 	}
 
-	if tx.data.BlkNum2.Cmp(big.NewInt(0)) > 0 {
-		preTX, err := bc.getTransaction(tx.data.BlkNum2, tx.data.TxIndex2)
+	if tx.Data.BlkNum2.Cmp(big.NewInt(0)) > 0 {
+		preTX, err := bc.getTransaction(tx.Data.BlkNum2, tx.Data.TxIndex2)
 
 		if err != nil {
 			return err
 		}
 
-		if err := verifyTxInput(tx, preTX, big1, tx.data.OIndex2); err != nil {
+		if err := verifyTxInput(tx, preTX, big1, tx.Data.OIndex2); err != nil {
 			return err
 		}
 
 		var inputAmount *big.Int
-		if tx.data.OIndex1.Cmp(big0) == 0 {
-			inputAmount = preTX.data.Amount1
+		if tx.Data.OIndex1.Cmp(big0) == 0 {
+			inputAmount = preTX.Data.Amount1
 		} else {
-			inputAmount = preTX.data.Amount2
+			inputAmount = preTX.Data.Amount2
 		}
 		inputAmounts = big.NewInt(0).Add(inputAmounts, inputAmount)
 	}
@@ -189,7 +190,7 @@ func (bc *BlockChain) verifyTransaction(tx *Transaction) error {
 }
 
 // verify UTXO can be spent
-func verifyTxInput(tx, preTx *Transaction, curOIndex, preOIndex *big.Int) error {
+func verifyTxInput(tx, preTx *types.Transaction, curOIndex, preOIndex *big.Int) error {
 	sender, err := tx.Sender(curOIndex)
 
 	if err != nil {
@@ -200,11 +201,11 @@ func verifyTxInput(tx, preTx *Transaction, curOIndex, preOIndex *big.Int) error 
 	var utxoOwner *common.Address
 
 	if preOIndex.Cmp(big.NewInt(0)) == 0 {
-		spent = preTx.spent1
-		utxoOwner = preTx.data.NewOwner1
+		spent = preTx.Spent1()
+		utxoOwner = preTx.Data.NewOwner1
 	} else if preOIndex.Cmp(big.NewInt(1)) == 0 {
-		spent = preTx.spent2
-		utxoOwner = preTx.data.NewOwner2
+		spent = preTx.Spent2()
+		utxoOwner = preTx.Data.NewOwner2
 	}
 
 	if spent {
@@ -228,9 +229,9 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 	}
 
 	if oIndex.Cmp(big.NewInt(0)) == 0 {
-		bc.blocks[blkNum.Uint64()].data.TransactionSet[txIndex.Int64()].spent1 = true
+		bc.blocks[blkNum.Uint64()].Data.TransactionSet[txIndex.Int64()].SetSpent1()
 	} else {
-		bc.blocks[blkNum.Uint64()].data.TransactionSet[txIndex.Int64()].spent2 = true
+		bc.blocks[blkNum.Uint64()].Data.TransactionSet[txIndex.Int64()].SetSpent2()
 	}
 }
 
@@ -263,10 +264,10 @@ func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 		}
 	}
 
-	bc.currentBlock.data.BlockNumber = big.NewInt(bc.currentBlockNumber.Int64())
+	bc.currentBlock.Data.BlockNumber = big.NewInt(bc.currentBlockNumber.Int64())
 	bc.blocks[bc.currentBlockNumber.Uint64()] = bc.currentBlock
 	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, bc.blockInterval)
-	bc.currentBlock = &Block{}
+	bc.currentBlock = &types.Block{}
 	bc.newBlock <- b
 
 	return b.Hash(), nil
@@ -277,16 +278,16 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address, dep
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
-	tx := NewTransaction(
+	tx := types.NewTransaction(
 		depositBlock, big0, big0,
 		big0, big0, big0,
 		depositor, amount,
 		&nullAddress, big0,
 		big0)
 
-	transactionSet := []*Transaction{tx}
+	transactionSet := []*types.Transaction{tx}
 
-	b := NewBlock(depositBlock, transactionSet, nil)
+	b := types.NewBlock(depositBlock, transactionSet, nil)
 
 	_, err := b.Seal()
 	if err != nil {
@@ -313,7 +314,7 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address, dep
 }
 
 // TODO: use event.Feed if needed.
-func (bc *BlockChain) addNewBlockListener(f func(blk *Block) error) error {
+func (bc *BlockChain) addNewBlockListener(f func(blk *types.Block) error) error {
 	for {
 		select {
 		case blk := <-bc.newBlock:
@@ -327,12 +328,12 @@ func (bc *BlockChain) addNewBlockListener(f func(blk *Block) error) error {
 }
 
 // add deposit block or synced block
-func (bc *BlockChain) addBlock(b *Block) error {
-	if bc.currentBlockNumber.Cmp(b.data.BlockNumber) != 0 {
+func (bc *BlockChain) addBlock(b *types.Block) error {
+	if bc.currentBlockNumber.Cmp(b.Data.BlockNumber) != 0 {
 		return invalidBlockNumber
 	}
 
-	bc.blocks[b.data.BlockNumber.Uint64()] = b
+	bc.blocks[b.Data.BlockNumber.Uint64()] = b
 	bc.currentBlockNumber = big0.And(bc.currentBlockNumber, big1)
 
 	// channel needed?

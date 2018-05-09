@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/plasma/types"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -517,9 +518,9 @@ func (pls *Plasma) listenDeposit() error {
 
 // addSubmitListener send new sealded block to root chain
 func (pls *Plasma) addSubmitListener() error {
-	listener := func(blk *Block) error {
-		if len(blk.data.TransactionSet) == 1 && blk.data.TransactionSet[0].data.BlkNum1.Cmp(blk.data.BlockNumber) == 0 {
-			log.Info("[Plasma] New deposit block added", "hash", blk.Hash(), "blkNum", blk.data.BlockNumber)
+	listener := func(blk *types.Block) error {
+		if len(blk.Data.TransactionSet) == 1 && blk.Data.TransactionSet[0].Data.BlkNum1.Cmp(blk.Data.BlockNumber) == 0 {
+			log.Info("[Plasma] New deposit block added", "hash", blk.Hash(), "blkNum", blk.Data.BlockNumber)
 			return nil
 		}
 
@@ -618,7 +619,7 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 			}
 
 			rawblock := payload.Block
-			log.Info("[Plasma] new block received", "hash", rawblock.Hash(), "blkNum", rawblock.data.BlockNumber)
+			log.Info("[Plasma] new block received", "hash", rawblock.Hash(), "blkNum", rawblock.Data.BlockNumber)
 
 			if err := pls.blockchain.addBlock(rawblock); err != nil {
 				return errResp(ErrDecode, "%v: %v", packet, err)
@@ -657,7 +658,7 @@ func (pls *Plasma) handlePeer(peer *Peer) error {
 				log.Info("[Plasma] Failed to decode pong", "err", err)
 				return errResp(ErrDecode, "%v: %v", packet, err)
 			}
-			log.Info("[Plasma] pong received", "peer", peer.ID(), "blockNumber", query.Block.data.BlockNumber, "hash", query.Block.Hash())
+			log.Info("[Plasma] pong received", "peer", peer.ID(), "blockNumber", query.Block.Data.BlockNumber, "hash", query.Block.Hash())
 
 		}
 	}

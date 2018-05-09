@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/plasma/types"
 	set "gopkg.in/fatih/set.v0"
 )
 
@@ -109,17 +110,17 @@ func (p *Peer) update() {
 }
 
 // mark marks an block known to the peer so that it won't be sent back.
-func (peer *Peer) markBlock(block *Block) {
+func (peer *Peer) markBlock(block *types.Block) {
 	peer.known.Add(block.Hash())
 }
 
 // mark marks an block known to the peer so that it won't be sent back.
-func (peer *Peer) markTransaction(tx *Transaction) {
+func (peer *Peer) markTransaction(tx *types.Transaction) {
 	peer.known.Add(tx.Hash())
 }
 
 // marked checks if an block is already known to the remote peer.
-func (peer *Peer) marked(block *Block) bool {
+func (peer *Peer) marked(block *types.Block) bool {
 	return peer.known.Has(block.Hash())
 }
 
