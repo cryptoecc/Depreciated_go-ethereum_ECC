@@ -22,6 +22,7 @@ type Config struct {
 	// Plasma operator node
 	OperatorNode    *Peer
 	OperatorNodeURL string
+	OperatorNodeID  string // TODO: replace above 2 fields
 
 	// BlockChain specific configs
 	DataDir string

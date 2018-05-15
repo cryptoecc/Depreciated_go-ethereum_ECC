@@ -62,7 +62,7 @@ func NewPublicPlasmaAPI(pls *Plasma) *PublicPlasmaAPI {
 
 // Version returns the Whisper sub-protocol version.
 func (api *PublicPlasmaAPI) Version(ctx context.Context) string {
-	return ProtocolVersionStr
+	return string(ProtocolVersion)
 }
 
 func (api *PublicPlasmaAPI) Deposit(ctx context.Context) string {
@@ -70,11 +70,11 @@ func (api *PublicPlasmaAPI) Deposit(ctx context.Context) string {
 }
 
 func (api *PublicPlasmaAPI) CurrentBlockNumber(ctx context.Context) uint64 {
-	return api.pls.blockchain.getCurrentBlockNumber().Uint64()
+	return api.pls.blockchain.GetCurrentBlockNumber().Uint64()
 }
 
 func (api *PublicPlasmaAPI) SubmitBlock(ctx context.Context) (common.Hash, error) {
-	return api.pls.blockchain.submitBlock(api.pls.config.OperatorPrivateKey)
+	return api.pls.blockchain.SubmitBlock(api.pls.config.OperatorPrivateKey)
 }
 
 func (api *PublicPlasmaAPI) ApplyTransaction(ctx context.Context, args TxArgs) (common.Hash, error) {
@@ -122,11 +122,11 @@ func (api *PublicPlasmaAPI) ApplyTransaction(ctx context.Context, args TxArgs) (
 
 	log.Info("[Plasma API] apply transaction", "txhash", tx.Hash(), "args", args)
 
-	return tx.Hash(), api.pls.blockchain.applyTransaction(tx)
+	return tx.Hash(), api.pls.blockchain.ApplyTransaction(tx)
 }
 
 func (api *PublicPlasmaAPI) GetBlock(ctx context.Context, BlkNum *hexutil.Big) (map[string]interface{}, error) {
-	b, err := api.pls.blockchain.getBlock(BlkNum.ToInt())
+	b, err := api.pls.blockchain.GetBlock(BlkNum.ToInt())
 
 	if err != nil {
 		return nil, err
@@ -136,7 +136,7 @@ func (api *PublicPlasmaAPI) GetBlock(ctx context.Context, BlkNum *hexutil.Big) (
 }
 
 func (api *PublicPlasmaAPI) GetTransaction(ctx context.Context, BlkNum, TxIndex *big.Int) (map[string]interface{}, error) {
-	tx, err := api.pls.blockchain.getTransaction(BlkNum, TxIndex)
+	tx, err := api.pls.blockchain.GetTransaction(BlkNum, TxIndex)
 
 	if err != nil {
 		return nil, err

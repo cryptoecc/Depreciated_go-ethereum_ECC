@@ -22,7 +22,7 @@ func TestMain(t *testing.T) {
 	amount := big.NewInt(1000)
 	owner1, owner1Key := addrs[0], keys[0]
 
-	if _, err := bc.newDeposit(amount, owner1, blkNum1); err != nil {
+	if _, err := bc.NewDeposit(amount, owner1, blkNum1); err != nil {
 		t.Fatal("Failed to create new deposit", err)
 	}
 
@@ -44,7 +44,7 @@ func TestMain(t *testing.T) {
 	if sender, _ := b1.Sender(); sender != bc.config.OperatorAddress {
 		t.Fatal("b1 sender and operator address mismatched")
 	}
-	if tx, err := bc.getTransaction(big1, big0); err != nil {
+	if tx, err := bc.GetTransaction(big1, big0); err != nil {
 		t.Fatal("bc failed to get tx1", err)
 	} else if tx.Hash() != tx1.Hash() {
 		t.Fatal("what's wrong")
@@ -54,7 +54,7 @@ func TestMain(t *testing.T) {
 	blkNum2 := big.NewInt(2)
 	owner2, owner2Key := addrs[1], keys[1]
 
-	if _, err := bc.newDeposit(big.NewInt(1000), owner2, blkNum2); err != nil {
+	if _, err := bc.NewDeposit(big.NewInt(1000), owner2, blkNum2); err != nil {
 		t.Fatal("Failed to create new deposit", err)
 	}
 
@@ -76,7 +76,7 @@ func TestMain(t *testing.T) {
 	if b2.Data.TransactionSet[0].Hash() != tx2.Hash() {
 		t.Fatal("tx2 is not included into block2")
 	}
-	if tx, err := bc.getTransaction(big.NewInt(2), big0); err != nil {
+	if tx, err := bc.GetTransaction(big.NewInt(2), big0); err != nil {
 		t.Fatal("bc failed to get tx2", err)
 	} else if tx.Hash() != tx2.Hash() {
 		t.Fatal("what's wrong")
@@ -92,7 +92,7 @@ func TestMain(t *testing.T) {
 
 	tx3.Sign1(owner1Key)
 
-	if err := bc.applyTransaction(tx3); err != nil {
+	if err := bc.ApplyTransaction(tx3); err != nil {
 		t.Log(tx3.Data)
 		t.Fatal("Failed to apply transaction 3", "error", err)
 	}
@@ -107,13 +107,13 @@ func TestMain(t *testing.T) {
 
 	tx4.Sign1(owner2Key)
 
-	if err := bc.applyTransaction(tx4); err != nil {
+	if err := bc.ApplyTransaction(tx4); err != nil {
 		t.Fatal("Failed to apply transaction 4", "error", err)
 	}
 
 	// submit tx 3, 4
 	blkNum3 := big.NewInt(1000)
-	_, err := bc.submitBlock(bc.config.OperatorPrivateKey)
+	_, err := bc.SubmitBlock(bc.config.OperatorPrivateKey)
 	if err != nil {
 		t.Fatal("Failed to submit block 3")
 	}
@@ -141,7 +141,7 @@ func TestMain(t *testing.T) {
 	tx5.Sign1(owner1Key)
 	tx5.Sign2(owner1Key)
 
-	if err := bc.applyTransaction(tx5); err != nil {
+	if err := bc.ApplyTransaction(tx5); err != nil {
 		t.Fatal("Failed to apply transaction 5", "error", err)
 	}
 }

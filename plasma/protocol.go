@@ -7,22 +7,35 @@ import (
 	"github.com/ethereum/go-ethereum/plasma/types"
 )
 
+// Official short name of the protocol used during capability negotiation.
+const ProtocolName = "pls"
+const ProtocolVersion = 1
+
+const ProtocolMaxMsgSize = 10 * 1024 * 1024 // Maximum cap on the size of a protocol message
+
+// pls protocol message codes
+/**
+ * TODO
+ *  1. exchange node's block number, tx hash info
+ *  2. mark the node has block or tx
+ *  3. broadcast node blocks or txs it doesn't have
+ */
 const (
-	ProtocolVersion    = uint64(1)
-	ProtocolVersionStr = "1"
-	ProtocolName       = "pls"
+	// Messages for blockchain
+	StatusCode          = 0x00 // used by plasma protocol
+	NewBlockCode        = 0x01 // broadcast a single block
+	NewBlocksCode       = 0x02 // broadcast batch of block
+	NewTransactionsCode = 0x03 // broadcast TX
+	GetBlockCode        = 0x04 // request a single block
+	GetBlocksCode       = 0x05 // request batch of blocks
 
-	StatusCode           = 0x01 // used by plasma protocol
-	OperatorCode         = 0x02 // operator node info
-	NewBlockCode         = 0x03 // broadcast block
-	NewTransactionCode   = 0x04 // broadcast TX
-	GetBlockCode         = 0x05 // request block by hash or number
-	PingCode             = 0x06 // ping
-	PongCode             = 0x07 // pong
-	NumberOfMessageCodes = 0x08
+	// Messages for node info
+	OperatorCode = 0x07 // operator node info
+	PingCode     = 0x08 // ping
+	PongCode     = 0x09 // pong
 
-	MaxMessageSize        = uint32(10 * 1024 * 1024) // maximum accepted size of a message.
-	DefaultMaxMessageSize = uint32(1024 * 1024)
+	// Number of implemented messages
+	ProtocolLength = 0x10
 )
 
 type errCode int
@@ -32,12 +45,29 @@ const (
 	ErrDecode
 	ErrInvalidMsgCode
 	ErrProtocolVersionMismatch
-	ErrNetworkIdMismatch
-	ErrGenesisBlockMismatch
+	ErrOperatorAddressMismatch
+	ErrContractAddressMismatch
 	ErrNoStatusMsg
 	ErrExtraStatusMsg
 	ErrSuspendedPeer
 )
+
+func (e errCode) String() string {
+	return errorToString[int(e)]
+}
+
+// XXX change once legacy code is out
+var errorToString = map[int]string{
+	ErrMsgTooLarge:             "Message too long",
+	ErrDecode:                  "Invalid message",
+	ErrInvalidMsgCode:          "Invalid message code",
+	ErrProtocolVersionMismatch: "Protocol version mismatch",
+	ErrOperatorAddressMismatch: "Operator mismatch",
+	ErrContractAddressMismatch: "Rootchain contract mismatch",
+	ErrNoStatusMsg:             "No status message",
+	ErrExtraStatusMsg:          "Extra status message",
+	ErrSuspendedPeer:           "Suspended peer",
+}
 
 var (
 	big0        = big.NewInt(0)
@@ -55,11 +85,6 @@ type statusData struct {
 
 type operatorData struct {
 	NodeURL string
-}
-
-type getBlockData struct {
-	Number uint64
-	Hash   common.Hash
 }
 
 type newBlockData struct {

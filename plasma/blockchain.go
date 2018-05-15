@@ -56,19 +56,19 @@ func NewBlockChain(config *Config) *BlockChain {
 	}
 }
 
-func (bc *BlockChain) getCurrentBlock() *types.Block {
+func (bc *BlockChain) GetCurrentBlock() *types.Block {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 	return bc.currentBlock
 }
 
-func (bc *BlockChain) getCurrentBlockNumber() *big.Int {
+func (bc *BlockChain) GetCurrentBlockNumber() *big.Int {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 	return bc.currentBlockNumber
 }
 
-func (bc *BlockChain) getBlock(blkNum *big.Int) (*types.Block, error) {
+func (bc *BlockChain) GetBlock(blkNum *big.Int) (*types.Block, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
@@ -85,7 +85,7 @@ func (bc *BlockChain) getBlock(blkNum *big.Int) (*types.Block, error) {
 	return b, nil
 }
 
-func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*types.Transaction, error) {
+func (bc *BlockChain) GetTransaction(blkNum, txIndex *big.Int) (*types.Transaction, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
@@ -109,8 +109,8 @@ func (bc *BlockChain) getTransaction(blkNum, txIndex *big.Int) (*types.Transacti
 }
 
 // TODO: broadcast new transaction to peers
-func (bc *BlockChain) applyTransaction(tx *types.Transaction) error {
-	if err := bc.verifyTransaction(tx); err != nil {
+func (bc *BlockChain) ApplyTransaction(tx *types.Transaction) error {
+	if err := bc.VerifyTransaction(tx); err != nil {
 		log.Info("[Plasma Chain] Failed to verify transaction", "hash", tx.Hash(), "error", err)
 
 		return err
@@ -123,7 +123,7 @@ func (bc *BlockChain) applyTransaction(tx *types.Transaction) error {
 	return nil
 }
 
-func (bc *BlockChain) verifyTransaction(tx *types.Transaction) error {
+func (bc *BlockChain) VerifyTransaction(tx *types.Transaction) error {
 	outputAmounts := big.NewInt(0)
 
 	if tx.Data.Amount1 != nil {
@@ -142,7 +142,7 @@ func (bc *BlockChain) verifyTransaction(tx *types.Transaction) error {
 	inputAmounts := big.NewInt(0)
 
 	if tx.Data.BlkNum1.Cmp(big.NewInt(0)) > 0 {
-		preTX, err := bc.getTransaction(tx.Data.BlkNum1, tx.Data.TxIndex1)
+		preTX, err := bc.GetTransaction(tx.Data.BlkNum1, tx.Data.TxIndex1)
 
 		if err != nil {
 			return err
@@ -162,7 +162,7 @@ func (bc *BlockChain) verifyTransaction(tx *types.Transaction) error {
 	}
 
 	if tx.Data.BlkNum2.Cmp(big.NewInt(0)) > 0 {
-		preTX, err := bc.getTransaction(tx.Data.BlkNum2, tx.Data.TxIndex2)
+		preTX, err := bc.GetTransaction(tx.Data.BlkNum2, tx.Data.TxIndex2)
 
 		if err != nil {
 			return err
@@ -235,10 +235,10 @@ func (bc *BlockChain) markUtxoSpent(blkNum, txIndex, oIndex *big.Int) {
 	}
 }
 
-// submitBlock seals current block. Only operator can seal, broadcast to peers,
+// SubmitBlock seals current block. Only operator can seal, broadcast to peers,
 // and record it on root chain
 // TODO: Check the submited block is correctly recorded
-func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error) {
+func (bc *BlockChain) SubmitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
 
@@ -274,7 +274,7 @@ func (bc *BlockChain) submitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 }
 
 // only operator can add deposit transaction
-func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address, depositBlock *big.Int) (common.Hash, error) {
+func (bc *BlockChain) NewDeposit(amount *big.Int, depositor *common.Address, depositBlock *big.Int) (common.Hash, error) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
@@ -289,6 +289,7 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address, dep
 
 	b := types.NewBlock(depositBlock, transactionSet, nil)
 
+	// TODO: deposit block doesn't need to be signed by operator
 	_, err := b.Seal()
 	if err != nil {
 		return common.BytesToHash(nil), err
@@ -314,7 +315,7 @@ func (bc *BlockChain) newDeposit(amount *big.Int, depositor *common.Address, dep
 }
 
 // TODO: use event.Feed if needed.
-func (bc *BlockChain) addNewBlockListener(f func(blk *types.Block) error) error {
+func (bc *BlockChain) AddNewBlockListener(f func(blk *types.Block) error) error {
 	for {
 		select {
 		case blk := <-bc.newBlock:
@@ -328,7 +329,7 @@ func (bc *BlockChain) addNewBlockListener(f func(blk *types.Block) error) error 
 }
 
 // add deposit block or synced block
-func (bc *BlockChain) addBlock(b *types.Block) error {
+func (bc *BlockChain) AddBlock(b *types.Block) error {
 	if bc.currentBlockNumber.Cmp(b.Data.BlockNumber) != 0 {
 		return invalidBlockNumber
 	}
