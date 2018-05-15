@@ -342,3 +342,16 @@ func (bc *BlockChain) AddBlock(b *types.Block) error {
 
 	return nil
 }
+
+// add deposit block or synced block
+func (bc *BlockChain) AddBlocks(blocks []*types.Block) (int, error) {
+	n := 0
+	for _, block := range blocks {
+		if err := bc.AddBlock(block); err != nil {
+			return n, err
+		}
+		n++
+	}
+
+	return n, nil
+}

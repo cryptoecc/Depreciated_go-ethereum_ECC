@@ -16,8 +16,12 @@ type Config struct {
 	// TODO: load this address from Plasma contract on Ethereum network
 	OperatorAddress common.Address
 
-	// If this node is operator, specify the private key
+	// If node is operator, specify the private key
+	// TODO: chagne to nodePrivateKey
 	OperatorPrivateKey *ecdsa.PrivateKey
+
+	// TODO: assign this field
+	IsOperator bool
 
 	// Plasma operator node
 	OperatorNode    *Peer

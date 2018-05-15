@@ -51,7 +51,7 @@ type PeerInfo struct {
 }
 
 // newPeer creates a new plasma peer object, but does not run the handshake itself.
-func newPeer(host *Plasma, remote *p2p.Peer, rw p2p.MsgReadWriter) *Peer {
+func newPeer(remote *p2p.Peer, rw p2p.MsgReadWriter, config *Config) *Peer {
 	id := remote.ID()
 
 	pubkey, err := remote.ID().Pubkey()
@@ -61,7 +61,7 @@ func newPeer(host *Plasma, remote *p2p.Peer, rw p2p.MsgReadWriter) *Peer {
 		return nil
 	}
 
-	operator := bytes.Equal(peerAddress.Bytes(), host.config.OperatorAddress.Bytes())
+	operator := bytes.Equal(peerAddress.Bytes(), config.OperatorAddress.Bytes())
 
 	return &Peer{
 		Peer: remote,
@@ -84,8 +84,6 @@ func (p *Peer) Info() *PeerInfo {
 		CurrentBlockNumber: p.currentBlockNumber.Uint64(),
 	}
 }
-
-func (p *Peer) Log() log.Logger { return p.peer.Log() }
 
 // start initiates the peer updater, periodically broadcasting the plasma packets
 // into the network.
@@ -193,7 +191,9 @@ func (p *Peer) broadcast() error {
 
 // send operator info
 func (p *Peer) SendOperator() error {
-	return p2p.Send(p.rw, OperatorCode, []interface{}{p.host.config.OperatorNodeURL})
+	// TODO: send oeprator peer info
+	// return p2p.Send(p.rw, OperatorCode, []interface{}{p.host.config.OperatorNodeURL})
+	return nil
 }
 
 // send a single block
@@ -224,7 +224,7 @@ func (p *Peer) RequestBlocks(blkNums []uint64) error {
 }
 
 func (p *Peer) ID() []byte {
-	id := p.peer.ID()
+	id := p.ID()
 	return id[:]
 }
 
@@ -343,7 +343,7 @@ func (ps *peerSet) Close() {
 	defer ps.lock.Unlock()
 
 	for _, p := range ps.peers {
-		p.peer.Disconnect(p2p.DiscQuitting)
+		p.Disconnect(p2p.DiscQuitting)
 	}
 	ps.closed = true
 }
