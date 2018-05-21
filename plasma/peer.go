@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+
 	"sync"
 	"time"
 
@@ -35,7 +36,7 @@ type Peer struct {
 	*p2p.Peer
 	rw p2p.MsgReadWriter
 
-	currentBlockNumber *big.Int
+	currentBlockNumber uint64
 	knownTxs           *set.Set // Set of transaction hashes known to be known by this peer
 	knownBlocks        *set.Set // Set of block hashes known to be known by this peer
 
@@ -62,6 +63,7 @@ func newPeer(remote *p2p.Peer, rw p2p.MsgReadWriter, config *Config) *Peer {
 	}
 
 	operator := bytes.Equal(peerAddress.Bytes(), config.OperatorAddress.Bytes())
+	log.Info("[Plasma]", "operator", operator, "peerAddress", peerAddress, "config.OperatorAddress", config.OperatorAddress)
 
 	return &Peer{
 		Peer: remote,
@@ -81,7 +83,7 @@ func newPeer(remote *p2p.Peer, rw p2p.MsgReadWriter, config *Config) *Peer {
 // Info gathers and returns a collection of metadata known about a peer.
 func (p *Peer) Info() *PeerInfo {
 	return &PeerInfo{
-		CurrentBlockNumber: p.currentBlockNumber.Uint64(),
+		CurrentBlockNumber: p.currentBlockNumber,
 	}
 }
 
@@ -100,7 +102,8 @@ func (p *Peer) stop() {
 
 // handshake sends the protocol initiation status message to the remote peer and
 // verifies the remote status too.
-func (p *Peer) handshake(config *Config) error {
+func (p *Peer) handshake(currentBlockNumber *big.Int, config *Config) error {
+	log.Info("[Plasma] handshaking...")
 	// Send the handshake status message asynchronously
 	errc := make(chan error, 1)
 	go func() {
@@ -108,7 +111,7 @@ func (p *Peer) handshake(config *Config) error {
 			ProtocolVersion: ProtocolVersion,
 			OperatorAddress: config.OperatorAddress,
 			ContractAddress: config.ContractAddress,
-			HighestEthBlock: 0, // TODO: read ethereum highest block
+			HighestPlsBlock: currentBlockNumber.Uint64(),
 		}
 
 		errc <- p2p.Send(p.rw, StatusCode, query)
@@ -132,14 +135,26 @@ func (p *Peer) handshake(config *Config) error {
 	if err != nil {
 		return fmt.Errorf("peer [%x] sent bad status message: %v", p.ID(), err)
 	}
+
+	// TODO: use error code
 	if query.ProtocolVersion != ProtocolVersion {
 		return fmt.Errorf("peer [%x]: protocol version mismatch %d != %d", p.ID(), query.ProtocolVersion, ProtocolVersion)
+	}
+	if query.OperatorAddress != config.OperatorAddress {
+		return fmt.Errorf("peer [%x]: operator address mismatch %d != %d", p.ID(), config.OperatorAddress, query.OperatorAddress)
+	}
+	if query.ContractAddress != config.ContractAddress {
+		return fmt.Errorf("peer [%x]: contract address mismatch %d != %d", p.ID(), config.ContractAddress, query.ContractAddress)
 	}
 
 	// Wait until out own status is consumed too
 	if err := <-errc; err != nil {
 		return fmt.Errorf("peer [%x] failed to send status packet: %v", p.ID(), err)
 	}
+
+	p.currentBlockNumber = query.HighestPlsBlock
+
+	log.Info("[Plasma] handshake done...")
 
 	return nil
 }
@@ -166,7 +181,7 @@ func (p *Peer) update() error {
 
 // mark marks an block known to the peer so that it won't be sent back.
 func (peer *Peer) markBlock(block *types.Block) {
-	peer.knownBlocks.Add(block.Data.BlockNumber.Uint64())
+	peer.knownBlocks.Add(block.NumberU64())
 }
 
 // mark marks an block known to the peer so that it won't be sent back.
@@ -189,6 +204,10 @@ func (p *Peer) broadcast() error {
 	return nil
 }
 
+func (p *Peer) IsOperator() bool {
+	return p.operator
+}
+
 // send operator info
 func (p *Peer) SendOperator() error {
 	// TODO: send oeprator peer info
@@ -202,7 +221,7 @@ func (p *Peer) SendNewBlock(block *types.Block) error {
 }
 
 // send a single block
-func (p *Peer) SendNewBlocks(blocks []*types.Block) error {
+func (p *Peer) SendNewBlocks(blocks types.Blocks) error {
 	return p2p.Send(p.rw, NewBlocksCode, blocks)
 }
 
@@ -218,13 +237,26 @@ func (p *Peer) RequestBlock(blkNum uint64) error {
 }
 
 func (p *Peer) RequestBlocks(blkNums []uint64) error {
-	p.Log().Info("Fetching plasma block", "blkNums", blkNums)
+	p.Log().Info("Fetching plasma blocks", "numBlocks", len(blkNums))
 
 	return p2p.Send(p.rw, GetBlocksCode, blkNums)
 }
 
+func (p *Peer) RequestTransactions(hashes []common.Hash) error {
+	p.Log().Info("Fetching plasma transactions", "numTXs", len(hashes))
+
+	return p2p.Send(p.rw, GetTransactionsCode, hashes)
+}
+
+func (p *Peer) SendPing(blkNum uint64) error {
+	query := pingData{
+		Number: blkNum,
+	}
+	return p2p.Send(p.rw, PingCode, query)
+}
+
 func (p *Peer) ID() []byte {
-	id := p.ID()
+	id := p.Peer.ID()
 	return id[:]
 }
 

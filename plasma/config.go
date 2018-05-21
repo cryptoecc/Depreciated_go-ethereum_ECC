@@ -9,6 +9,8 @@ import (
 
 // Config represents the configuration state of a plasma node.
 type Config struct {
+	MaxPeers int
+
 	// Address of plasma contract on root chain
 	ContractAddress common.Address
 
@@ -34,6 +36,7 @@ type Config struct {
 }
 
 var DefaultConfig = Config{
+	MaxPeers:        25,
 	ContractAddress: common.StringToAddress("0x0"),
 	OperatorAddress: params.PlasmaOperatorAddress,
 }

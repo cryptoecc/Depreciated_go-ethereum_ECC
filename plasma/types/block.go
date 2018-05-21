@@ -28,9 +28,15 @@ type Block struct {
 	size   atomic.Value
 }
 
+type Blocks []*Block
+
 type blockJSONData struct {
 	hash         common.Hash `json:"hash"`
 	transactions [][]byte    `json:"transactions"`
+}
+
+func (b *Block) NumberU64() uint64 {
+	return b.Data.BlockNumber.Uint64()
 }
 
 func (b *Block) ToRPCResponse() map[string]interface{} {

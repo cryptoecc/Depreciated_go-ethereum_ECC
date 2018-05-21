@@ -1,8 +1,9 @@
 package plasma
 
 import (
-	// "bytes"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -16,13 +17,14 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/params"
-	// "github.com/ethereum/go-ethereum/plasma/downloader"
 	"github.com/ethereum/go-ethereum/plasma/types"
 	"github.com/ethereum/go-ethereum/rpc"
 )
+
+var invalidBlockHash = errors.New("Wrong block hash")
 
 // Plasma implements the Plasma full node service
 type Plasma struct {
@@ -37,20 +39,22 @@ type Plasma struct {
 	transactOpts *bind.TransactOpts
 
 	// Channels
-	quit           chan bool
-	backendCh      chan *ethclient.Client
-	operatorNodeCh chan *Peer
+	quit          chan bool
+	backendCh     chan *ethclient.Client
+	rootchainCh   chan struct{}
+	rootchainLoad bool // checks rootchain contract instance is loaded
+
+	eventMux *event.TypeMux
 
 	// Peers
 	peers *peerSet
 
 	// Handlers
-	server     *p2p.Server
-	backend    *ethclient.Client // actual rpc backend
-	blockchain *BlockChain       // Plasma blockchain
-	downloader *Downloader       // Plasma downloader (TODO: implements this)
+	protocolManager *ProtocolManager
+	server          *p2p.Server
+	backend         *ethclient.Client // actual rpc backend
+	blockchain      *BlockChain       // Plasma blockchain
 
-	eventMux       *event.TypeMux
 	accountManager *accounts.Manager // node account manager
 
 	ApiBackend *Backend // pls api backend
@@ -60,21 +64,32 @@ type Plasma struct {
 }
 
 // New creates Plasma instance
-func New(config *Config, accountManager *accounts.Manager) *Plasma {
+func New(ctx *node.ServiceContext, config *Config) *Plasma {
 	if config == nil {
 		config = &DefaultConfig
 	}
 
 	pls := &Plasma{
-		config:         config,
-		context:        context.Background(),
-		accountManager: accountManager,
+		config:  config,
+		context: context.Background(),
 
-		backendCh:      make(chan *ethclient.Client),
-		quit:           make(chan bool),
+		backendCh:   make(chan *ethclient.Client),
+		rootchainCh: make(chan struct{}, 1),
+		quit:        make(chan bool),
+
+		eventMux: ctx.EventMux,
+
 		peers:          newPeerSet(),
-		operatorNodeCh: make(chan *Peer, 1),
+		accountManager: ctx.AccountManager,
 	}
+
+	verifier := func(block *types.Block) error { return pls.verifyBlock(block) }
+	higheter := func() []uint64 { return pls.higheter() }
+
+	blockchain := NewBlockChain(config, verifier)
+	pls.blockchain = blockchain
+
+	pls.protocolManager = NewProtocolManager(config, pls.isOperator(), pls.eventMux, blockchain, higheter)
 
 	// TODO: sync pm.protocol
 	// pls.protocol = p2p.Protocol{
@@ -93,8 +108,6 @@ func New(config *Config, accountManager *accounts.Manager) *Plasma {
 	// 		return id
 	// 	},
 	// }
-
-	pls.blockchain = NewBlockChain(config)
 
 	return pls
 }
@@ -122,6 +135,7 @@ func (pls *Plasma) RegisterClient(backend *ethclient.Client) {
 func (pls *Plasma) Start(server *p2p.Server) error {
 	pls.server = server
 
+	pls.protocolManager.Start(pls.config.MaxPeers)
 	go pls.run()
 
 	log.Info("[Plasma] node started", "version", ProtocolVersion, "operator", pls.config.OperatorAddress, "contract", pls.config.ContractAddress)
@@ -131,13 +145,14 @@ func (pls *Plasma) Start(server *p2p.Server) error {
 // Stop implements node.Service, stopping the background data propagation thread
 // of the Plasma protocol.
 func (pls *Plasma) Stop() error {
+	pls.protocolManager.Stop()
 	close(pls.quit)
 	return nil
 }
 
 // Protocols implements node.Service, retrieving the P2P protocols the service wishes to start.
 func (pls *Plasma) Protocols() []p2p.Protocol {
-	return []p2p.Protocol{pls.protocol}
+	return []p2p.Protocol{pls.protocolManager.Protocol}
 }
 
 // Version returns the plasma sub-protocols version number.
@@ -157,15 +172,6 @@ func (pls *Plasma) APIs() []rpc.API {
 	}
 }
 
-// CurrentBlockNumber returns currnt block number + 1 on plasma chain
-func (pls *Plasma) CurrentBlockNumber() uint64 {
-	return pls.blockchain.GetCurrentBlockNumber().Uint64()
-}
-
-func (pls *Plasma) getPeers() []*discover.Node {
-	return nil
-}
-
 func (pls *Plasma) run() {
 	select {
 	case backend := <-pls.backendCh:
@@ -175,6 +181,7 @@ func (pls *Plasma) run() {
 		return
 	}
 
+	log.Info("[Plasma] node initializing")
 	if err := pls.initialize(); err != nil {
 		log.Info("[Plasma] Failed to initialize", "err", err)
 	}
@@ -199,6 +206,7 @@ func (pls *Plasma) initialize() error {
 		log.Info("[Plasma] Failed to wait Eth syncing", "err", err)
 		return err
 	}
+	log.Info("[Plasma] Eth is synced. check contract deployment")
 
 	// deploy or load plasma contract
 	deployed, err := pls.checkContractDepoyed()
@@ -234,14 +242,17 @@ func (pls *Plasma) initialize() error {
 		log.Info("[Plasma] Contract deployed", "hash", tx.Hash(), "contract", address)
 	}
 
-	// wait until plasma chain is synced
-	if err := pls.waitPlsSynced(); err != nil {
-		log.Warn("[Plasma] Failed to wait PLS syncing", "err", err)
-		return err
-	}
+	pls.rootchainCh <- struct{}{}
+	pls.rootchainLoad = true
 
 	// run deposit listener
 	err = pls.listenDeposit()
+	if err != nil {
+		return err
+	}
+
+	// run submit listener
+	err = pls.listenSubmit()
 	if err != nil {
 		return err
 	}
@@ -262,8 +273,10 @@ func (pls *Plasma) waitEthSynced() error {
 		return nil
 	}
 
+	log.Info("[Plasma] wait until operator peer is connedted")
 	// Wait operator peer is conencted
-	<-pls.operatorNodeCh
+	<-pls.protocolManager.operatorNodeCh
+	log.Info("[Plasma] operator peer is connedted")
 
 	// Wait until syncing is finished
 	for {
@@ -284,14 +297,192 @@ func (pls *Plasma) waitEthSynced() error {
 			log.Info("[Plasma] Ethereum is synced")
 			return nil
 		}
-
 	}
 }
 
-func (pls *Plasma) waitPlsSynced() error {
-	// operator doesn't have to be synced.
+func (pls *Plasma) checkContractDepoyed() (bool, error) {
+	// nil to recent block
+	code, err := pls.backend.CodeAt(pls.context, pls.config.ContractAddress, nil)
+	if err != nil {
+		return false, err
+	} else {
+		return len(code) > 0, nil
+	}
+}
+
+func (pls *Plasma) isOperator() bool {
+	if pls.config.OperatorPrivateKey == nil {
+		return false
+	}
+
+	return params.PlasmaOperatorAddress == crypto.PubkeyToAddress(pls.config.OperatorPrivateKey.PublicKey)
+}
+
+// watch Deposit event
+func (pls *Plasma) listenDeposit() error {
+	filterer, err := contract.NewRootChainFilterer(pls.config.ContractAddress, pls.backend)
+
+	if err != nil {
+		return err
+	}
+
+	// TODO: If plasma node had stopped previously, read event from last parent block when node stopped
+	watchOpts := bind.WatchOpts{
+		Context: pls.context,
+		Start:   nil,
+	}
+
+	sink := make(chan *contract.RootChainDeposit)
+
+	sub, err := filterer.WatchDeposit(&watchOpts, sink)
+
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		for {
+			select {
+			case deposit := <-sink:
+				if deposit != nil {
+					log.Info("[Plasma] New deposit on plasma contract", "depositor", deposit.Depositor, "amount", deposit.Amount)
+
+					if _, err := pls.blockchain.NewDeposit(deposit.Amount, &deposit.Depositor, deposit.DepositBlock); err != nil {
+						log.Warn("[Plasma] Failed to add new deposit from rootchain", "err", err)
+					}
+				}
+
+			case <-pls.quit:
+				sub.Unsubscribe()
+				return
+			case err := <-sub.Err():
+				log.Warn("[Plasma] Deposit subscription error", err)
+				sub.Unsubscribe()
+				return
+			}
+		}
+	}()
+
+	return nil
+}
+
+// watch Submit event
+func (pls *Plasma) listenSubmit() error {
 	if pls.isOperator() {
 		return nil
+	}
+
+	filterer, err := contract.NewRootChainFilterer(pls.config.ContractAddress, pls.backend)
+
+	if err != nil {
+		return err
+	}
+
+	// TODO: If plasma node had stopped previously, read event from last parent block when node stopped
+	watchOpts := bind.WatchOpts{
+		Context: pls.context,
+		Start:   nil,
+	}
+
+	sink := make(chan *contract.RootChainSubmit)
+
+	sub, err := filterer.WatchSubmit(&watchOpts, sink)
+
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		for {
+			select {
+			case submitBlock := <-sink:
+				if submitBlock != nil {
+					log.Info("[Plasma] New block is submitted", "blkNum", submitBlock.SubmitBlock, "root", submitBlock.Root)
+
+					// TODO: enqueue request
+					operator := pls.protocolManager.peers.Operator()
+					blkNum := submitBlock.SubmitBlock.Uint64()
+					if err := operator.RequestBlock(blkNum); err != nil {
+						log.Warn("[Plasma] Failed to request submit-block to operator", "err", err)
+					}
+				}
+
+			case <-pls.quit:
+				sub.Unsubscribe()
+				return
+			case err := <-sub.Err():
+				log.Warn("[Plasma] Deposit subscription error", err)
+				sub.Unsubscribe()
+				return
+			}
+		}
+	}()
+
+	return nil
+}
+
+// addSubmitListener send new sealded block to root chain
+func (pls *Plasma) addSubmitListener() error {
+	listener := func(blk *types.Block) error {
+		if len(blk.Data.TransactionSet) == 1 && blk.Data.TransactionSet[0].Data.BlkNum1.Cmp(blk.Data.BlockNumber) == 0 {
+			log.Info("[Plasma] New deposit block added", "hash", blk.Hash(), "blkNum", blk.Data.BlockNumber)
+			return nil
+		}
+
+		tx, err := pls.rootchain.SubmitBlock(pls.transactOpts, blk.Hash())
+
+		if err != nil {
+			log.Info("[Plasma] Failed to submimt new block", "hash", blk.Hash(), "err", err)
+		} else {
+			log.Info("[Plasma] Submimt new block", "blkhash", blk.Hash(), "txhash", tx.Hash())
+		}
+		return nil
+	}
+
+	return pls.blockchain.AddNewBlockListener(listener)
+}
+
+// sign any bytes from unlocked ethereum account
+func (pls *Plasma) sign(hash []byte, from common.Address) ([]byte, error) {
+	// Look up the wallet containing the requested signer
+	account := accounts.Account{Address: from}
+	wallet, err := pls.accountManager.Find(account)
+	if err != nil {
+		return nil, err
+	}
+
+	return wallet.SignHash(account, hash)
+}
+
+// verify block hash on root
+func (pls *Plasma) verifyBlock(block *types.Block) error {
+	callOpts := bind.CallOpts{
+		Pending: false,
+		Context: pls.context,
+	}
+
+	res, err := pls.rootchain.ChildChain(&callOpts, block.Data.BlockNumber)
+
+	if err != nil {
+		return err
+	}
+
+	root1 := block.Hash().Bytes()
+	root2 := res.Root[:]
+
+	if !bytes.Equal(root1, root2) {
+		log.Warn("[Plasma] wrong depsoit block hash", "root1", root1, "root2", root2)
+		return invalidBlockHash
+	}
+
+	return nil
+}
+
+// get block numbers not downloaded yet
+func (pls *Plasma) higheter() []uint64 {
+	// wait rootchain load
+	if !pls.rootchainLoad {
+		<-pls.rootchainCh
 	}
 
 	callOpts := bind.CallOpts{
@@ -352,144 +543,5 @@ func (pls *Plasma) waitPlsSynced() error {
 		}
 	}
 
-	log.Info("[Plasma]", "blocksToRequest", blocksToRequest)
-
-	p2p.Send(pls.config.OperatorNode.rw, GetBlocksCode, blocksToRequest)
-	return nil
-}
-
-func (pls *Plasma) checkContractDepoyed() (bool, error) {
-	// nil to recent block
-	code, err := pls.backend.CodeAt(pls.context, pls.config.ContractAddress, nil)
-	if err != nil {
-		return false, err
-	} else {
-		return len(code) > 0, nil
-	}
-}
-
-func (pls *Plasma) isOperator() bool {
-	if pls.config.OperatorPrivateKey == nil {
-		return false
-	}
-
-	return params.PlasmaOperatorAddress == crypto.PubkeyToAddress(pls.config.OperatorPrivateKey.PublicKey)
-}
-
-// watch Deposit event
-// TODO: only operator need to listen it.
-func (pls *Plasma) listenDeposit() error {
-	filterer, err := contract.NewRootChainFilterer(pls.config.ContractAddress, pls.backend)
-
-	if err != nil {
-		return err
-	}
-
-	// TODO: If plasma node had stopped previously, read event from last parent block when node stopped
-	watchOpts := bind.WatchOpts{
-		Context: pls.context,
-		Start:   nil,
-	}
-
-	sink := make(chan *contract.RootChainDeposit)
-
-	sub, err := filterer.WatchDeposit(&watchOpts, sink)
-
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		for {
-			select {
-			case deposit := <-sink:
-				if deposit != nil {
-					log.Info("[Plasma] New deposit on plasma contract", "depositor", deposit.Depositor, "amount", deposit.Amount)
-
-					// TODO: should add new deposit block regardless of whether operator or not
-					if pls.isOperator() {
-						// operator seal new deposit block
-						if _, err := pls.blockchain.NewDeposit(deposit.Amount, &deposit.Depositor, deposit.DepositBlock); err != nil {
-							log.Warn("[Plasma] Failed to add new deposit from rootchain", "err", err)
-						}
-					} else {
-						// other node request deposit block
-						// TODO: use request pool. operator will send the block before expected request arrived.
-						if pls.config.OperatorNode == nil {
-							log.Warn("[Plasma] Operator Node is nil")
-							continue
-						}
-
-						log.Info("[Plasma] requesting new deposit block", "number", deposit.DepositBlock)
-						p2p.Send(pls.config.OperatorNode.rw, GetBlockCode, deposit.DepositBlock)
-
-						// packet, err := pls.config.OperatorNode.rw.ReadMsg()
-						//
-						// if err == nil {
-						// 	log.Warn("[Plasma] Failed to fetch deposit block", "err", err)
-						// 	continue
-						// }
-						//
-						// if packet.Code != NewBlockCode {
-						// 	log.Warn("[Plasma] Client expected to receive new deposit block.", "code", packet.Code)
-						// 	continue
-						// }
-						//
-						// var newBlockQuery newBlockData
-						// if err := packet.Decode(&newBlockQuery); err != nil {
-						// 	log.Warn("[Plasma] Failed to decode new block data", "err", err)
-						// 	continue
-						// }
-						//
-						// pls.blockchain.AddBlock(newBlockQuery.Block)
-						// log.Info("[Plasma] New deposit block fetched", "hash", newBlockQuery.Block.Hash())
-					}
-
-				}
-
-			case <-pls.quit:
-				sub.Unsubscribe()
-				return
-			case err := <-sub.Err():
-				log.Warn("[Plasma] Deposit subscription error", err)
-				sub.Unsubscribe()
-				return
-			}
-		}
-	}()
-
-	return nil
-}
-
-// addSubmitListener send new sealded block to root chain
-func (pls *Plasma) addSubmitListener() error {
-	listener := func(blk *types.Block) error {
-		if len(blk.Data.TransactionSet) == 1 && blk.Data.TransactionSet[0].Data.BlkNum1.Cmp(blk.Data.BlockNumber) == 0 {
-			log.Info("[Plasma] New deposit block added", "hash", blk.Hash(), "blkNum", blk.Data.BlockNumber)
-			return nil
-		}
-
-		tx, err := pls.rootchain.SubmitBlock(pls.transactOpts, blk.Hash())
-
-		if err != nil {
-			log.Info("[Plasma] Failed to submimt new block", "hash", blk.Hash(), "err", err)
-		} else {
-			log.Info("[Plasma] Submimt new block", "blkhash", blk.Hash(), "txhash", tx.Hash())
-		}
-		return nil
-	}
-
-	return pls.blockchain.AddNewBlockListener(listener)
-}
-
-// sign any bytes from unlocked ethereum account
-func (pls *Plasma) sign(hash []byte, from common.Address) ([]byte, error) {
-	// Look up the wallet containing the requested signer
-	account := accounts.Account{Address: from}
-	wallet, err := pls.accountManager.Find(account)
-	if err != nil {
-		return nil, err
-	}
-
-	return wallet.SignHash(account, hash)
+	return blocksToRequest
 }

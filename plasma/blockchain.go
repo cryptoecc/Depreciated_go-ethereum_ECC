@@ -24,6 +24,8 @@ var (
 	invalidBlockNumber = errors.New("new block has invalid block number. plasma chain may not be synced")
 )
 
+type blockVerifier func(*types.Block) error
+
 // BlockChain implements Plasma block chain service
 type BlockChain struct {
 	config *Config
@@ -40,10 +42,13 @@ type BlockChain struct {
 	quit     chan struct{}
 
 	lock sync.RWMutex
+
+	// callbacks
+	verifyBlock blockVerifier
 }
 
 // NewBlockChain creates BlockChain instance
-func NewBlockChain(config *Config) *BlockChain {
+func NewBlockChain(config *Config, verifyBlock blockVerifier) *BlockChain {
 	return &BlockChain{
 		config:              config,
 		blocks:              make(map[uint64]*types.Block),
@@ -53,6 +58,7 @@ func NewBlockChain(config *Config) *BlockChain {
 		pendingTransactions: []*types.Transaction{},
 		newBlock:            make(chan *types.Block, 1),
 		quit:                make(chan struct{}),
+		verifyBlock:         verifyBlock,
 	}
 }
 
@@ -243,6 +249,7 @@ func (bc *BlockChain) SubmitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 	defer bc.lock.RUnlock()
 
 	b := bc.currentBlock
+	b.Data.BlockNumber = big.NewInt(bc.currentBlockNumber.Int64())
 
 	if privKey == nil {
 		privKey = bc.config.OperatorPrivateKey
@@ -253,6 +260,7 @@ func (bc *BlockChain) SubmitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 		return common.BytesToHash(nil), err
 	}
 
+	// TODO: verify block from Rootchain contract
 	b.Sign(privKey)
 
 	if sender, err := b.Sender(); err != nil {
@@ -264,7 +272,6 @@ func (bc *BlockChain) SubmitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 		}
 	}
 
-	bc.currentBlock.Data.BlockNumber = big.NewInt(bc.currentBlockNumber.Int64())
 	bc.blocks[bc.currentBlockNumber.Uint64()] = bc.currentBlock
 	bc.currentBlockNumber = big.NewInt(0).Add(bc.currentBlockNumber, bc.blockInterval)
 	bc.currentBlock = &types.Block{}
@@ -273,13 +280,12 @@ func (bc *BlockChain) SubmitBlock(privKey *ecdsa.PrivateKey) (common.Hash, error
 	return b.Hash(), nil
 }
 
-// only operator can add deposit transaction
-func (bc *BlockChain) NewDeposit(amount *big.Int, depositor *common.Address, depositBlock *big.Int) (common.Hash, error) {
+func (bc *BlockChain) NewDeposit(amount *big.Int, depositor *common.Address, depositBlockNumber *big.Int) (common.Hash, error) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
 	tx := types.NewTransaction(
-		depositBlock, big0, big0,
+		depositBlockNumber, big0, big0,
 		big0, big0, big0,
 		depositor, amount,
 		&nullAddress, big0,
@@ -287,39 +293,28 @@ func (bc *BlockChain) NewDeposit(amount *big.Int, depositor *common.Address, dep
 
 	transactionSet := []*types.Transaction{tx}
 
-	b := types.NewBlock(depositBlock, transactionSet, nil)
+	b := types.NewBlock(depositBlockNumber, transactionSet, nil)
+	b.Seal()
 
-	// TODO: deposit block doesn't need to be signed by operator
-	_, err := b.Seal()
-	if err != nil {
-		return common.BytesToHash(nil), err
+	if err := bc.verifyBlock(b); err != nil {
+		// TODO: activate
+		// return common.Hash{}, err
 	}
 
-	b.Sign(bc.config.OperatorPrivateKey)
-
-	if sender, err := b.Sender(); err != nil {
-		return common.BytesToHash(nil), err
-	} else {
-		if sender != bc.config.OperatorAddress {
-			log.Warn("[Plasma chain] block sealer and plasma operator not matched", "sealer", sender, "operator", bc.config.OperatorAddress)
-			return common.BytesToHash(nil), invalidOperator
-		}
-	}
-
-	bc.blocks[depositBlock.Uint64()] = b
+	bc.blocks[depositBlockNumber.Uint64()] = b
 	bc.newBlock <- b
 
-	log.Info("[Plasma Chain] New Deposit added", "depositBlock", depositBlock)
+	log.Info("[Plasma Chain] New Deposit added", "depositBlockNumber", depositBlockNumber)
 
 	return b.Hash(), nil
 }
 
 // TODO: use event.Feed if needed.
-func (bc *BlockChain) AddNewBlockListener(f func(blk *types.Block) error) error {
+func (bc *BlockChain) AddNewBlockListener(listener func(blk *types.Block) error) error {
 	for {
 		select {
 		case blk := <-bc.newBlock:
-			if err := f(blk); err != nil {
+			if err := listener(blk); err != nil {
 				log.Info("[Plasma Chain] Faield to listen new block", "err", err)
 			}
 		case <-bc.quit:
@@ -329,28 +324,30 @@ func (bc *BlockChain) AddNewBlockListener(f func(blk *types.Block) error) error 
 }
 
 // add deposit block or synced block
-func (bc *BlockChain) AddBlock(b *types.Block) error {
-	if bc.currentBlockNumber.Cmp(b.Data.BlockNumber) != 0 {
-		return invalidBlockNumber
+func (bc *BlockChain) AddBlock(b *types.Block) (int, error) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+
+	blkNum := b.NumberU64()
+
+	if _, ok := bc.blocks[blkNum]; ok {
+		return 0, nil
 	}
 
-	bc.blocks[b.Data.BlockNumber.Uint64()] = b
-	bc.currentBlockNumber = big0.And(bc.currentBlockNumber, big1)
+	bc.blocks[blkNum] = b
 
-	// channel needed?
-	// bc.newBlock <- b
-
-	return nil
+	return 1, nil
 }
 
-// add deposit block or synced block
-func (bc *BlockChain) AddBlocks(blocks []*types.Block) (int, error) {
+// add batch of blocks
+func (bc *BlockChain) AddBlocks(blocks types.Blocks) (int, error) {
 	n := 0
 	for _, block := range blocks {
-		if err := bc.AddBlock(block); err != nil {
+		if n2, err := bc.AddBlock(block); err != nil {
 			return n, err
+		} else {
+			n += n2
 		}
-		n++
 	}
 
 	return n, nil

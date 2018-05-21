@@ -28,11 +28,12 @@ const (
 	NewTransactionsCode = 0x03 // broadcast TX
 	GetBlockCode        = 0x04 // request a single block
 	GetBlocksCode       = 0x05 // request batch of blocks
+	GetTransactionsCode = 0x06 // request batch of transactions
 
 	// Messages for node info
-	OperatorCode = 0x07 // operator node info
-	PingCode     = 0x08 // ping
-	PongCode     = 0x09 // pong
+	OperatorCode = 0x08 // operator node info
+	PingCode     = 0x09 // ping
+	PongCode     = 0x0a // pong
 
 	// Number of implemented messages
 	ProtocolLength = 0x10
@@ -80,7 +81,7 @@ type statusData struct {
 	ProtocolVersion uint64
 	OperatorAddress common.Address
 	ContractAddress common.Address
-	HighestEthBlock uint64
+	HighestPlsBlock uint64
 }
 
 type operatorData struct {

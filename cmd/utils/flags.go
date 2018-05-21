@@ -1235,7 +1235,7 @@ func RegisterShhService(stack *node.Node, cfg *whisper.Config) {
 // RegisterPlsService configures Plasma full node and adds it to the given node.
 func RegisterPlsService(stack *node.Node, cfg *plasma.Config) {
 	if err := stack.Register(func(n *node.ServiceContext) (node.Service, error) {
-		return plasma.New(cfg, n.AccountManager), nil
+		return plasma.New(n, cfg), nil
 	}); err != nil {
 		Fatalf("Failed to register the Plasma service: %v", err)
 	}

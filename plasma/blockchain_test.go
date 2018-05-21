@@ -14,6 +14,11 @@ var bc *BlockChain
 var keys []*ecdsa.PrivateKey
 var addrs []*common.Address
 
+// to create BlockChain
+func verifyBlockMock(block *types.Block) error {
+	return nil
+}
+
 func TestMain(t *testing.T) {
 	initialize(t)
 
@@ -149,7 +154,7 @@ func TestMain(t *testing.T) {
 func initialize(t *testing.T) {
 	config := DefaultConfig
 	config.OperatorPrivateKey, _ = crypto.HexToECDSA("9cd69f009ac86203e54ec50e3686de95ff6126d3b30a19f926a0fe9323c17181")
-	bc = NewBlockChain(&config)
+	bc = NewBlockChain(&config, verifyBlockMock)
 
 	keyStrs := []string{
 		"abf82ff96b463e9d82b83cb9bb450fe87e6166d4db6d7021d0c71d7e960d5abe",

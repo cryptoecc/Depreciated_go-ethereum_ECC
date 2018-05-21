@@ -45,6 +45,8 @@ type Transaction struct {
 	size atomic.Value
 }
 
+type Transactions []*Transaction
+
 func (tx *Transaction) Sig1() []byte { return tx.sig1 }
 func (tx *Transaction) Sig2() []byte { return tx.sig2 }
 func (tx *Transaction) Spent1() bool { return tx.spent1 }
