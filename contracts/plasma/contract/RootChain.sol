@@ -31,6 +31,7 @@ contract RootChain {
      * Events
      */
     event Deposit(address depositor, uint256 amount, uint256 depositBlock);
+    event Submit(uint256 submitBlock,bytes32 root);
     event Exit(address exitor, uint256 utxoPos);
 
     /*
@@ -124,6 +125,7 @@ contract RootChain {
             root: root,
             created_at: block.timestamp
         });
+        Submit(currentChildBlock, root);
         currentChildBlock = currentChildBlock.add(childBlockInterval);
         currentDepositBlock = 1;
     }
