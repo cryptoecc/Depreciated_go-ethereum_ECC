@@ -320,6 +320,11 @@ func (pls *Plasma) isOperator() bool {
 
 // watch Deposit event
 func (pls *Plasma) listenDeposit() error {
+	// TODO: remove below if-statement. it's just for testing
+	if !pls.isOperator() {
+		return nil
+	}
+
 	filterer, err := contract.NewRootChainFilterer(pls.config.ContractAddress, pls.backend)
 
 	if err != nil {
@@ -513,7 +518,6 @@ func (pls *Plasma) higheter() []uint64 {
 	for _, blkNum := range epochs {
 		// submit-block
 		if blkNum > 0 {
-			log.Info("[Plasma] add submit block request queue", "blkNum", blkNum)
 			blocksToRequest = append(blocksToRequest, blkNum)
 		}
 
@@ -534,7 +538,6 @@ func (pls *Plasma) higheter() []uint64 {
 			}
 
 			if err != nil || isEmpty {
-				log.Info("[Plasma] stop", "err", err, "isEmpty", isEmpty)
 				break
 			}
 
