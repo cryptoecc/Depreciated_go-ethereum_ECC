@@ -38,6 +38,7 @@ func (w *wizard) networkStats() {
 	// Clear out some previous configs to refill from current scan
 	w.conf.ethstats = ""
 	w.conf.bootnodes = w.conf.bootnodes[:0]
+	//w.conf.swarmboot = w.conf.swarmboot[:0]
 
 	// Iterate over all the specified hosts and check their status
 	var pend sync.WaitGroup
@@ -76,6 +77,7 @@ func (w *wizard) gatherStats(server string, pubkey []byte, client *sshClient) *s
 		genesis   string
 		ethstats  string
 		bootnodes []string
+		swarmboot []string
 	)
 	// Ensure a valid SSH connection to the remote server
 	logger := log.New("server", server)
@@ -165,6 +167,26 @@ func (w *wizard) gatherStats(server string, pubkey []byte, client *sshClient) *s
 	} else {
 		stat.services["dashboard"] = infos.Report()
 	}
+	logger.Debug("Checking for swarmboot availability")
+	if infos, err := checkSwarmNode(client, w.network, true); err != nil {
+		if err != ErrServiceUnknown {
+			stat.services["swarmboot"] = map[string]string{"offline": err.Error()}
+		}
+	} else {
+		stat.services["swarmboot"] = infos.Report()
+
+		genesis = string(infos.genesis)
+		swarmboot = append(swarmboot, infos.swarmenode)
+	}
+	logger.Debug("Checking for swarmnode availability")
+	if infos, err := checkSwarmNode(client, w.network, false); err != nil {
+		if err != ErrServiceUnknown {
+			stat.services["swarmnode"] = map[string]string{"offline": err.Error()}
+		}
+	} else {
+		stat.services["swarmnode"] = infos.Report()
+		genesis = string(infos.genesis)
+	}
 	// Feed and newly discovered information into the wizard
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -181,6 +203,7 @@ func (w *wizard) gatherStats(server string, pubkey []byte, client *sshClient) *s
 		w.conf.ethstats = ethstats
 	}
 	w.conf.bootnodes = append(w.conf.bootnodes, bootnodes...)
+	w.conf.swarmboot = append(w.conf.swarmboot, swarmboot...)
 
 	return stat
 }

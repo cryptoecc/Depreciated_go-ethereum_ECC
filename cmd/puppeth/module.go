@@ -150,3 +150,13 @@ func checkPort(host string, port int) error {
 	conn.Close()
 	return nil
 }
+
+func checkBzzPort(host string, bzzport int) error {
+	log.Trace("Verifying remote TCP connectivity", "server", host, "port", bzzport)
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, bzzport), time.Second)
+	if err != nil {
+		return err
+	}
+	conn.Close()
+	return nil
+}
