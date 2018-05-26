@@ -40,7 +40,7 @@ ADD bzzpass /bzzpass
 
 RUN \
 	echo 'mkdir -p /root/.ethereum/keystore/ && cp /bzzkey.json /root/.ethereum/keystore/' > geth.sh && \
-	echo $'swarm --bzznetworkid {{.NetworkID}} {{if .BzzAccount}}--bzzaccount {{.BzzAccount}} {{end}}--port {{.Port}} --maxpeers {{.Peers}} {{if .SwarmBoot}}--bootnodes {{.SwarmBoot}}{{end}} --password /bzzpass' >> geth.sh
+	echo $'swarm --bzznetworkid {{.NetworkID}} {{if .BzzAccount}}--bzzaccount {{.BzzAccount}} {{end}}--port {{.Port}} --bzzport {{.bzzPort}} --maxpeers {{.Peers}} {{if .SwarmBoot}}--bootnodes {{.SwarmBoot}}{{end}} --password /bzzpass' >> geth.sh
 
 ENTRYPOINT ["/bin/sh", "geth.sh"]
 `
@@ -59,7 +59,7 @@ services:
     volumes:
       - {{.Datadir}}:/root/.ethereum
     environment:
-      - PORT={{.Port}}/tcp
+      - PORT={{.bzzPort}}/tcp
     logging:
       driver: "json-file"
       options:
@@ -68,7 +68,7 @@ services:
     restart: always
 `
 
-// deployNode deploys a new Ethereum node container to a remote machine via SSH,
+// deploysSwarm deploys a new Swarm node container to a remote machine via SSH,
 // docker and docker-compose. If an instance with the specified network name
 // already exists there, it will be overwritten!
 func deploySwarm(client *sshClient, network string, swarmboot []string, config *swarmInfos, nocache bool) ([]byte, error) {
@@ -121,7 +121,7 @@ func deploySwarm(client *sshClient, network string, swarmboot []string, config *
 	if nocache {
 		return nil, client.Stream(fmt.Sprintf("cd %s && docker-compose -p %s build --pull --no-cache && docker-compose -p %s up -d --force-recreate", workdir, network, network))
 	}
-	return nil, client.Stream(fmt.Sprintf("cd %s && docker-compose -p %s up -d --build --force-recreate", workdir, network))
+	return nil, client.Stream(fmt.Sprintf("cd %s && docker-compose -p %s up -d --build --force-recreate", workdir, network)) // 설치 로그
 }
 
 // nodeInfos is returned from a boot or seal node status check to allow reporting
@@ -149,19 +149,16 @@ func (info *swarmInfos) Report() map[string]string {
 		"Peer count (all total)":   strconv.Itoa(info.peersTotal),
 	}
 
-	if info.bzzAccount != "" {
-		report["Bzz account"] = info.bzzAccount
-	}
+	report["Bzz account"] = info.bzzAccount
 
 	if info.keyJSON != "" {
-		// Clique proof-of-authority signer
 		var key struct {
 			Address string `json:"address"`
 		}
 		if err := json.Unmarshal([]byte(info.keyJSON), &key); err == nil {
-			report["Signer account"] = common.HexToAddress(key.Address).Hex()
+			report["Bzz account"] = common.HexToAddress(key.Address).Hex()
 		} else {
-			log.Error("Failed to retrieve signer address", "err", err)
+			log.Error("Failed to retrieve bzz address", "err", err)
 		}
 	}
 
@@ -202,7 +199,7 @@ func checkSwarmNode(client *sshClient, network string, boot bool) (*swarmInfos, 
 	if out, err = client.Run(fmt.Sprintf("docker exec %s_%s_1 cat /bzzkey.json", network, kind)); err == nil {
 		keyJSON = string(bytes.TrimSpace(out))
 	}
-	if out, err = client.Run(fmt.Sprintf("docker exec %s_%s_1 cat /bzzpass", network, kind)); err == nil {
+	if out, err = client.Run(fmt.Sprintf("docker exec %s_%s_1 cat /bzzpass", network, kind)); err == nil { // 얘가 문제는 아님
 		keyPass = string(bytes.TrimSpace(out))
 	}
 	// Run a sanity check to see if the devp2p is reachable
@@ -211,23 +208,23 @@ func checkSwarmNode(client *sshClient, network string, boot bool) (*swarmInfos, 
 		log.Warn(fmt.Sprintf("%s devp2p port seems unreachable", strings.Title(kind)), "server", client.server, "port", port, "err", err)
 	}
 
-	// Run a sanity check to see if the devp2p is reachable
-	bzzPort := infos.portmap[infos.envvars["BZZPORT"]]
-	if err = checkBzzPort(client.server, bzzPort); err != nil {
-		log.Warn(fmt.Sprintf("%s bzzp2p port seems unreachable", strings.Title(kind)), "server", client.server, "bzzport", bzzPort, "err", err)
-	}
+	//Run a sanity check to see if the devp2p is reachable
+	//bzzPort := infos.portmap[infos.envvars["BZZPORT"]]
+	//if err = checkBzzPort(client.server, bzzPort); err != nil {
+	//	log.Warn(fmt.Sprintf("%s bzzp2p port seems unreachable", strings.Title(kind)), "server", client.server, "bzzport", bzzPort, "err", err)
+	//}
 	// Assemble and return the useful infos
 	stats := &swarmInfos{
 		genesis:    genesis,
 		datadir:    infos.volumes["/root/.ethereum"],
 		port:       port,
-		bzzPort:    bzzPort,
+		//bzzPort:    bzzPort,
 		peersTotal: totalPeers,
 		keyJSON:    keyJSON,
 		bzzAccount: infos.envvars["BZZ_NAME"],
 		keyPass:    keyPass,
 	}
 	stats.swarmenode = fmt.Sprintf("enode://%s@%s:%d", id, client.address, stats.port)
-
+	//fmt.Println(nil)
 	return stats, nil
 }

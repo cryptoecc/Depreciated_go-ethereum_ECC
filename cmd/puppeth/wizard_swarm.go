@@ -26,7 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// deployNode creates a new node configuration based on some user input.
+// deploySwarm creates a new node configuration based on some user input.
 func (w *wizard) deploySwarm(boot bool) {
 	// Do some sanity check before the user wastes time on input
 	if w.conf.Genesis == nil {
@@ -45,9 +45,9 @@ func (w *wizard) deploySwarm(boot bool) {
 	infos, err := checkSwarmNode(client, w.network, boot)
 	if err != nil {
 		if boot {
-			infos = &swarmInfos{port: 30399, peersTotal: 50}
+			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
 		} else {
-			infos = &swarmInfos{port: 30399, peersTotal: 50}
+			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
 		}
 	}
 	existed := err == nil
@@ -105,11 +105,9 @@ func (w *wizard) deploySwarm(boot bool) {
 			}
 		}
 	} else {
-		fmt.Printf("Please paste the bzzaccount (defaultt = %s)\n", infos.bzzAccount)
+		fmt.Printf("Please paste the bzzaccount (default = %s)\n", infos.bzzAccount)
 		infos.bzzAccount = w.readDefaultAddress(common.HexToAddress(infos.bzzAccount)).Hex()
 	}
-
-
 
 	// Try to deploy the full node on the host
 	nocache := false
