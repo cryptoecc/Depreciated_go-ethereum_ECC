@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/stamina"
 )
 
 var (
@@ -132,28 +133,12 @@ func ApplyMessage(evm *vm.EVM, msg Message, gp *GasPool) ([]byte, uint64, bool, 
 	return NewStateTransition(evm, msg, gp).TransitionDb()
 }
 
-func (st *StateTransition) from() vm.AccountRef {
-	f := st.msg.From()
-	if !st.state.Exist(f) {
-		st.state.CreateAccount(f)
+// to returns the recipient of the message.
+func (st *StateTransition) to() common.Address {
+	if st.msg == nil || st.msg.To() == nil /* contract creation */ {
+		return common.Address{}
 	}
-	return vm.AccountRef(f)
-}
-
-func (st *StateTransition) to() vm.AccountRef {
-	if st.msg == nil {
-		return vm.AccountRef{}
-	}
-	to := st.msg.To()
-	if to == nil {
-		return vm.AccountRef{} // contract creation
-	}
-
-	reference := vm.AccountRef(*to)
-	if !st.state.Exist(*to) {
-		st.state.CreateAccount(*to)
-	}
-	return reference
+	return *st.msg.To()
 }
 
 func (st *StateTransition) useGas(amount uint64) error {
@@ -166,12 +151,8 @@ func (st *StateTransition) useGas(amount uint64) error {
 }
 
 func (st *StateTransition) buyGas() error {
-	var (
-		state  = st.state
-		sender = st.from()
-	)
 	mgval := new(big.Int).Mul(new(big.Int).SetUint64(st.msg.Gas()), st.gasPrice)
-	if state.GetBalance(sender.Address()).Cmp(mgval) < 0 {
+	if st.state.GetBalance(st.msg.From()).Cmp(mgval) < 0 {
 		return errInsufficientBalanceForGas
 	}
 	if err := st.gp.SubGas(st.msg.Gas()); err != nil {
@@ -180,38 +161,122 @@ func (st *StateTransition) buyGas() error {
 	st.gas += st.msg.Gas()
 
 	st.initialGas = st.msg.Gas()
-	state.SubBalance(sender.Address(), mgval)
+	st.state.SubBalance(st.msg.From(), mgval)
+	return nil
+}
+
+func (st *StateTransition) buyDelegateeGas(delegatee common.Address) error {
+	mgval := new(big.Int).Mul(new(big.Int).SetUint64(st.msg.Gas()), st.gasPrice)
+	balance, err := stamina.GetStamina(st.evm, delegatee)
+	if err != nil {
+		return err
+	}
+
+	if balance.Cmp(mgval) < 0 {
+		return errInsufficientBalanceForGas
+	}
+	if err := st.gp.SubGas(st.msg.Gas()); err != nil {
+		return err
+	}
+	st.gas += st.msg.Gas()
+
+	st.initialGas = st.msg.Gas()
+	stamina.SubtractStamina(st.evm, delegatee, mgval)
 	return nil
 }
 
 func (st *StateTransition) preCheck() error {
-	msg := st.msg
-	sender := st.from()
-
-	// Make sure this transaction's nonce is correct
-	if msg.CheckNonce() {
-		nonce := st.state.GetNonce(sender.Address())
-		if nonce < msg.Nonce() {
+	// Make sure this transaction's nonce is correct.
+	if st.msg.CheckNonce() {
+		nonce := st.state.GetNonce(st.msg.From())
+		if nonce < st.msg.Nonce() {
 			return ErrNonceTooHigh
-		} else if nonce > msg.Nonce() {
+		} else if nonce > st.msg.Nonce() {
 			return ErrNonceTooLow
 		}
 	}
 	return st.buyGas()
 }
 
+func (st *StateTransition) preDelegateeCheck(delegatee common.Address) error {
+	// Make sure this transaction's nonce is correct.
+	if st.msg.CheckNonce() {
+		nonce := st.state.GetNonce(st.msg.From())
+		if nonce < st.msg.Nonce() {
+			return ErrNonceTooHigh
+		} else if nonce > st.msg.Nonce() {
+			return ErrNonceTooLow
+		}
+	}
+
+	return st.buyDelegateeGas(delegatee)
+}
+
 // TransitionDb will transition the state by applying the current message and
 // returning the result including the the used gas. It returns an error if it
 // failed. An error indicates a consensus issue.
+// TODO: moscow - apply message 수정 부분.
+//       st.evm.Context에 추가 구현된 Stamina 함수들을 사용.
 func (st *StateTransition) TransitionDb() (ret []byte, usedGas uint64, failed bool, err error) {
+	var (
+		evm = st.evm
+		// vm errors do not effect consensus and are therefor
+		// not assigned to err, except for insufficient balance
+		// error.
+		vmerr error
+	)
+
+	msg := st.msg
+	sender := vm.AccountRef(msg.From())
+	homestead := st.evm.ChainConfig().IsHomestead(st.evm.BlockNumber)
+	contractCreation := msg.To() == nil
+
+	// get delegatee
+	delegatee, _ := stamina.GetDelegatee(evm, msg.From())
+	log.Info("GetDelegatee", "from", msg.From(), "delegatee", delegatee)
+
+	// moscow - if has delegatee
+	if delegatee != common.HexToAddress("0x00") {
+		if err = st.preDelegateeCheck(delegatee); err != nil {
+			return
+		}
+
+		// Pay intrinsic gas
+		gas, err := IntrinsicGas(st.data, contractCreation, homestead)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		if err = st.useGas(gas); err != nil {
+			return nil, 0, false, err
+		}
+
+		if contractCreation {
+			ret, _, st.gas, vmerr = evm.Create(sender, st.data, st.gas, st.value)
+		} else {
+			// Increment the nonce for the next transaction
+			st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
+			ret, st.gas, vmerr = evm.Call(sender, st.to(), st.data, st.gas, st.value)
+		}
+		if vmerr != nil {
+			log.Debug("VM returned with error", "err", vmerr)
+			// The only possible consensus-error would be if there wasn't
+			// sufficient balance to make the transfer happen. The first
+			// balance transfer may never fail.
+			if vmerr == vm.ErrInsufficientBalance {
+				return nil, 0, false, vmerr
+			}
+		}
+		st.refundDelegateeGas(delegatee)
+		// TODO: gas fee to miner
+		st.state.AddBalance(st.evm.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.gasPrice))
+
+		return ret, st.gasUsed(), vmerr != nil, err
+	}
+
+	// moscow - original version
 	if err = st.preCheck(); err != nil {
 		return
 	}
-	msg := st.msg
-	sender := st.from() // err checked in preCheck
-
-	homestead := st.evm.ChainConfig().IsHomestead(st.evm.BlockNumber)
-	contractCreation := msg.To() == nil
 
 	// Pay intrinsic gas
 	gas, err := IntrinsicGas(st.data, contractCreation, homestead)
@@ -222,19 +287,12 @@ func (st *StateTransition) TransitionDb() (ret []byte, usedGas uint64, failed bo
 		return nil, 0, false, err
 	}
 
-	var (
-		evm = st.evm
-		// vm errors do not effect consensus and are therefor
-		// not assigned to err, except for insufficient balance
-		// error.
-		vmerr error
-	)
 	if contractCreation {
 		ret, _, st.gas, vmerr = evm.Create(sender, st.data, st.gas, st.value)
 	} else {
 		// Increment the nonce for the next transaction
-		st.state.SetNonce(sender.Address(), st.state.GetNonce(sender.Address())+1)
-		ret, st.gas, vmerr = evm.Call(sender, st.to().Address(), st.data, st.gas, st.value)
+		st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
+		ret, st.gas, vmerr = evm.Call(sender, st.to(), st.data, st.gas, st.value)
 	}
 	if vmerr != nil {
 		log.Debug("VM returned with error", "err", vmerr)
@@ -260,10 +318,25 @@ func (st *StateTransition) refundGas() {
 	st.gas += refund
 
 	// Return ETH for remaining gas, exchanged at the original rate.
-	sender := st.from()
-
 	remaining := new(big.Int).Mul(new(big.Int).SetUint64(st.gas), st.gasPrice)
-	st.state.AddBalance(sender.Address(), remaining)
+	st.state.AddBalance(st.msg.From(), remaining)
+
+	// Also return remaining gas to the block gas counter so it is
+	// available for the next transaction.
+	st.gp.AddGas(st.gas)
+}
+
+func (st *StateTransition) refundDelegateeGas(delegatee common.Address) {
+	// Apply refund counter, capped to half of the used gas.
+	refund := st.gasUsed() / 2
+	if refund > st.state.GetRefund() {
+		refund = st.state.GetRefund()
+	}
+	st.gas += refund
+
+	// Return ETH for remaining gas, exchanged at the original rate.
+	remaining := new(big.Int).Mul(new(big.Int).SetUint64(st.gas), st.gasPrice)
+	stamina.AddStamina(st.evm, delegatee, remaining)
 
 	// Also return remaining gas to the block gas counter so it is
 	// available for the next transaction.
