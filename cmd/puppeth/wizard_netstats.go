@@ -22,11 +22,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/olekukonko/tablewriter"
-	"fmt"
 )
 
 // networkStats verifies the status of network components and generates a protip
@@ -106,6 +104,8 @@ func (w *wizard) gatherStats(server string, pubkey []byte, client *sshClient) *s
 	} else {
 		stat.services["nginx"] = infos.Report()
 	}
+
+
 	logger.Debug("Checking for ethstats availability")
 	if infos, err := checkEthstats(client, w.network); err != nil {
 		if err != ErrServiceUnknown {
@@ -170,28 +170,20 @@ func (w *wizard) gatherStats(server string, pubkey []byte, client *sshClient) *s
 	} else {
 		stat.services["dashboard"] = infos.Report()
 	}
-	logger.Debug("Checking for swarmboot availability")
-	if infos, err := checkSwarmNode(client, w.network, true); err != nil {
+	logger.Debug("Checking for swarm availability")
+	if infos, err := checkSwarm(client, w.network, true); err != nil {
 
 		if err != ErrServiceUnknown {
-			stat.services["swarmboot"] = map[string]string{"offline": err.Error()}
+			stat.services["swarm"] = map[string]string{"offline": err.Error()}
 		}
+	} else if infos == nil {
+		w.conf.swarmboot = make([]string, 0)
 	} else {
-		stat.services["swarmboot"] = infos.Report()
-
+		stat.services["swarm"] = infos.Report()
 		genesis = string(infos.genesis)
-		fmt.Println(swarmboot)
 		swarmboot = append(swarmboot, infos.swarmenode)
 	}
-	logger.Debug("Checking for swarmnode availability")
-	if infos, err := checkSwarmNode(client, w.network, false); err != nil {
-		if err != ErrServiceUnknown {
-			stat.services["swarmnode"] = map[string]string{"offline": err.Error()}
-		}
-	} else {
-		stat.services["swarmnode"] = infos.Report()
-		genesis = string(infos.genesis)
-	}
+
 	// Feed and newly discovered information into the wizard
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -207,8 +199,12 @@ func (w *wizard) gatherStats(server string, pubkey []byte, client *sshClient) *s
 	if ethstats != "" {
 		w.conf.ethstats = ethstats
 	}
+
 	w.conf.bootnodes = append(w.conf.bootnodes, bootnodes...)
-	w.conf.swarmboot = append(w.conf.swarmboot, swarmboot...)
+
+	if strings.TrimSpace(strings.Join(w.conf.swarmboot, "")) == "" {
+		w.conf.swarmboot = append(w.conf.swarmboot, swarmboot...) //swarm의 enode값이 없을 경우에만 추가
+	}
 
 	return stat
 }
@@ -304,4 +300,14 @@ func (stats serverStats) render() {
 		}
 	}
 	table.Render()
+}
+
+// protips contains a collection of network infos to report pro-tips
+// based on.
+type protips struct {
+	genesis   string
+	network   int64
+	bootFull  []string
+	bootLight []string
+	ethstats  string
 }

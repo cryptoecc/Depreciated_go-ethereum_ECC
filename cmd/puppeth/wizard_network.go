@@ -178,8 +178,7 @@ func (w *wizard) deployComponent() {
 	fmt.Println(" 5. Wallet    - Browser wallet for quick sends")
 	fmt.Println(" 6. Faucet    - Crypto faucet to give away funds")
 	fmt.Println(" 7. Dashboard - Website listing above web-services")
-	fmt.Println(" 8. Swarmboot - Entry point of swarm")
-	fmt.Println(" 9. Swarmnode - Normal swarm node (Swarmboot require)")
+	fmt.Println(" 8. Swarm     - Content distribution storage service")
 
 	switch w.read() {
 	case "1":
@@ -198,8 +197,6 @@ func (w *wizard) deployComponent() {
 		w.deployDashboard()
 	case "8":
 		w.deploySwarm(true)
-	case "9":
-		w.deploySwarm(false)
 	default:
 		log.Error("That's not something I can do")
 	}

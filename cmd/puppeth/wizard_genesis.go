@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"encoding/hex"
 	"math/big"
 	"math/rand"
 	"time"
@@ -29,11 +30,18 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	staminaCommon "github.com/ethereum/go-ethereum/stamina/common"
 )
 
 // makeGenesis creates a new genesis struct based on some user input.
 func (w *wizard) makeGenesis() {
 	// Construct a default genesis block
+	staminaBinBytes, err := hex.DecodeString(staminaCommon.StaminaContractBin[2:])
+	if err != nil {
+		panic(err)
+	}
+
+
 	genesis := &core.Genesis{
 		Timestamp:  uint64(time.Now().Unix()),
 		GasLimit:   4700000,
@@ -122,6 +130,12 @@ func (w *wizard) makeGenesis() {
 	fmt.Println()
 	fmt.Println("Specify your chain/network ID if you want an explicit one (default = random)")
 	genesis.Config.ChainID = new(big.Int).SetUint64(uint64(w.readDefaultInt(rand.Intn(65536))))
+
+	//add stamina contract
+	genesis.Alloc[staminaCommon.StaminaContractAddress] = core.GenesisAccount{
+		Balance: big.NewInt(0),
+		Code: staminaBinBytes,
+	}
 
 	// All done, store the genesis and flush to disk
 	log.Info("Configured new genesis block")

@@ -107,7 +107,7 @@ func (w *wizard) deployNode(boot bool) {
 			// Ethash based miners only need an etherbase to mine against
 			fmt.Println()
 			if infos.etherbase == "" {
-				fmt.Printf("What address should the miner use?\n")
+				fmt.Printf("What address should the miner user?\n")
 				for {
 					if address := w.readAddress(); address != nil {
 						infos.etherbase = address.Hex()
@@ -115,7 +115,7 @@ func (w *wizard) deployNode(boot bool) {
 					}
 				}
 			} else {
-				fmt.Printf("What address should the miner use? (default = %s)\n", infos.etherbase)
+				fmt.Printf("What address should the miner user? (default = %s)\n", infos.etherbase)
 				infos.etherbase = w.readDefaultAddress(common.HexToAddress(infos.etherbase)).Hex()
 			}
 		} else if w.conf.Genesis.Config.Clique != nil {
@@ -147,6 +147,47 @@ func (w *wizard) deployNode(boot bool) {
 				}
 			}
 		}
+		// json key가 같으면 안됨, 구분해주는 코드 필요
+		if infos.owner == "" {
+			fmt.Println()
+			fmt.Println("Please paste the contract owner's key JSON: (must have pre-funded eth)")
+			infos.owner = w.readJSON()
+
+			fmt.Println()
+			fmt.Println("What's the unlock password for the account? (won't be echoed)")
+			infos.ownerPass = w.readPassword()
+
+			if _, err := keystore.DecryptKey([]byte(infos.owner), infos.ownerPass); err != nil {
+				log.Error("Failed to decrypt key with given passphrase")
+				return
+			}
+		}
+
+		if infos.delegatee == "" {
+			fmt.Println()
+			fmt.Println("Please paste the delegatee's key JSON:")
+			infos.delegatee = w.readJSON()
+
+			fmt.Println()
+			fmt.Println("What's the unlock password for the account? (won't be echoed)")
+			infos.delegateePass = w.readPassword()
+
+			if _, err := keystore.DecryptKey([]byte(infos.delegatee), infos.delegateePass); err != nil {
+				log.Error("Failed to decrypt key with given passphrase")
+				return
+			}
+		}
+
+		if infos.delegator == "" {
+			fmt.Printf("What address will be first delegator?\n")
+			for {
+				if address := w.readAddress(); address != nil {
+					infos.delegator = address.Hex()
+					break
+				}
+			}
+		}
+
 		// Establish the gas dynamics to be enforced by the signer
 		fmt.Println()
 		fmt.Printf("What gas limit should empty blocks target (MGas)? (default = %0.3f)\n", infos.gasTarget)
@@ -163,6 +204,8 @@ func (w *wizard) deployNode(boot bool) {
 		fmt.Printf("Should the node be built from scratch (y/n)? (default = no)\n")
 		nocache = w.readDefaultString("n") != "n"
 	}
+
+
 	if out, err := deployNode(client, w.network, w.conf.bootnodes, infos, nocache); err != nil {
 		log.Error("Failed to deploy Ethereum node container", "err", err)
 		if len(out) > 0 {

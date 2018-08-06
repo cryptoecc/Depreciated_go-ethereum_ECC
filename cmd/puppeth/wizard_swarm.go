@@ -26,7 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// deploySwarm creates a new node configuration based on some user input.
+// deploySwarm creates a new swarm node configuration based on some user input.
 func (w *wizard) deploySwarm(boot bool) {
 	// Do some sanity check before the user wastes time on input
 	if w.conf.Genesis == nil {
@@ -42,18 +42,14 @@ func (w *wizard) deploySwarm(boot bool) {
 	client := w.servers[server]
 
 	// Retrieve any active node configurations from the server
-	infos, err := checkSwarmNode(client, w.network, boot)
+	infos, err := checkSwarm(client, w.network, boot)
 	if err != nil {
-		if boot {
-			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
-		} else {
-			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
+		infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
 		}
-	}
 	existed := err == nil
 
 	infos.genesis, _ = json.MarshalIndent(w.conf.Genesis, "", "  ")
-	infos.network = w.conf.Genesis.Config.ChainId.Int64()
+	infos.network = w.conf.Genesis.Config.ChainID.Int64()
 
 	// Figure out where the user wants to store the persistent data
 	fmt.Println()
@@ -116,7 +112,8 @@ func (w *wizard) deploySwarm(boot bool) {
 		fmt.Printf("Should the node be built from scratch (y/n)? (default = no)\n")
 		nocache = w.readDefaultString("n") != "n"
 	}
-	if out, err := deploySwarm(client, w.network, w.conf.bootnodes, infos, nocache); err != nil {
+
+	if out, err := deploySwarm(client, w.network, w.conf.swarmboot, infos, nocache); err != nil {
 		log.Error("Failed to deploy Swarm node container", "err", err)
 		if len(out) > 0 {
 			fmt.Printf("%s\n", out)
