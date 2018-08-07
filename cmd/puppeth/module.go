@@ -58,6 +58,7 @@ type containerInfos struct {
 func inspectContainer(client *sshClient, container string) (*containerInfos, error) {
 	// Check whether there's a container running for the service
 	out, err := client.Run(fmt.Sprintf("docker inspect %s", container))
+
 	if err != nil {
 		return nil, ErrServiceUnknown
 	}

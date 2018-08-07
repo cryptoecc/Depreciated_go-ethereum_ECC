@@ -62,11 +62,8 @@ const main = async() => {
 
   await stamina.setDelegator(delegator, {from: delegatee});
   
-  await stamina.deposit(delegatee, {from: owner, value: 1e18, gas: 2e6});
+  await stamina.deposit(delegatee, {from: owner, value: 5e17, gas: 2e6});
 
-  setTimeout(function() {
-	web3.eth.sendTransaction({from:delegator, to:delegatee, value:5e17});
-  });
   
   console.log("Set stamina complete.")  
 };
@@ -164,7 +161,6 @@ func deployNode(client *sshClient, network string, bootnodes []string, config *n
 		kind = "bootnode"
 		bootnodes = make([]string, 0)
 	}
-
 	// Generate the content to upload to the server
 	workdir := fmt.Sprintf("%d", rand.Int63())
 	files := make(map[string][]byte)
@@ -285,7 +281,6 @@ func deployNode(client *sshClient, network string, bootnodes []string, config *n
 		//	delegateeCheck = "checked"
 		//}
 	}
-
 	// Upload the deployment files to the remote server (and clean up afterwards)
 	if out, err := client.Upload(files); err != nil {
 		return out, err
@@ -297,7 +292,6 @@ func deployNode(client *sshClient, network string, bootnodes []string, config *n
 		return nil, client.Stream(fmt.Sprintf("cd %s && docker-compose -p %s build --pull --no-cache && docker-compose -p %s up -d --force-recreate", workdir, network, network))
 	}
 	return nil, client.Stream(fmt.Sprintf("cd %s && docker-compose -p %s up -d --build --force-recreate", workdir, network))
-
 }
 
 // nodeInfos is returned from a boot or seal node status check to allow reporting
@@ -336,7 +330,6 @@ func (info *nodeInfos) Report() map[string]string {
 		"Peer count (light nodes)": strconv.Itoa(info.peersLight),
 		"Ethstats username":        info.ethstats,
 	}
-
 	if info.gasTarget > 0 {
 		// Miner or signer node
 		report["Gas limit (baseline target)"] = fmt.Sprintf("%0.3f MGas", info.gasTarget)
@@ -407,7 +400,6 @@ func checkNode(client *sshClient, network string, boot bool) (*nodeInfos, error)
 	}
 	id := bytes.Trim(bytes.TrimSpace(out), "\"")
 
-
 	if out, err = client.Run(fmt.Sprintf("docker exec %s_%s_1 cat /genesis.json", network, kind)); err != nil {
 		return nil, ErrServiceUnreachable
 	}
@@ -415,10 +407,10 @@ func checkNode(client *sshClient, network string, boot bool) (*nodeInfos, error)
 
 	//defer client.Run(fmt.Sprintf("docker exec %s_%s_1 node stamina/app.js", network, kind))
 
-	if kind == "sealnode" && checkStamina != true {
-		client.Run(fmt.Sprintf("docker exec %s_%s_1 node stamina/app.js", network, kind))
-		checkStamina = true
-	}
+	//if kind == "sealnode" && checkStamina != true {
+	//	client.Run(fmt.Sprintf("docker exec %s_%s_1 node stamina/app.js", network, kind))
+	//	checkStamina = true
+	//}
 
 	keyJSON, keyPass := "", ""
 	if out, err = client.Run(fmt.Sprintf("docker exec %s_%s_1 cat /signer.json", network, kind)); err == nil {

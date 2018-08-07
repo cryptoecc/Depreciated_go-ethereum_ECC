@@ -216,6 +216,9 @@ func (w *wizard) deployNode(boot bool) {
 	// All ok, run a network scan to pick any changes up
 	log.Info("Waiting for node to finish booting")
 	time.Sleep(3 * time.Second)
+	if !boot{
+		client.Run(fmt.Sprintf("docker exec %s_sealnode_1 node stamina/app.js", w.network))
+	}
 
 	w.networkStats()
 }
