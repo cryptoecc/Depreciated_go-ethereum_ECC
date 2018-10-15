@@ -161,6 +161,10 @@ var (
 		Name:  "dev.period",
 		Usage: "Block period to use in developer mode (0 = mine only if transaction pending)",
 	}
+	DeveloperFaucetKeyHexFlag = cli.StringFlag{
+		Name:  "dev.faucetkey",
+		Usage: "Developer account key as hex",
+	}
 	IdentityFlag = cli.StringFlag{
 		Name:  "identity",
 		Usage: "Custom node name",
@@ -1482,9 +1486,18 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 		// Create new developer account or reuse existing one
 		var (
 			developer accounts.Account
+			key       *ecdsa.PrivateKey
 			err       error
 		)
-		if accs := ks.Accounts(); len(accs) > 0 {
+
+		if hex := ctx.GlobalString(DeveloperFaucetKeyHexFlag.Name); hex != "" {
+			if key, err = crypto.HexToECDSA(hex); err != nil {
+				Fatalf("Option %q: %v", DeveloperFaucetKeyHexFlag.Name, err)
+			}
+			if developer, err = ks.ImportECDSA(key, ""); err != nil {
+				Fatalf("Failed to create developer account: %v", err)
+			}
+		} else if accs := ks.Accounts(); len(accs) > 0 {
 			developer = ks.Accounts()[0]
 		} else {
 			developer, err = ks.NewAccount("")

@@ -135,6 +135,7 @@ var (
 		utils.NodeKeyHexFlag,
 		utils.DeveloperFlag,
 		utils.DeveloperPeriodFlag,
+		utils.DeveloperFaucetKeyHexFlag,
 		utils.TestnetFlag,
 		utils.RinkebyFlag,
 		utils.GoerliFlag,
