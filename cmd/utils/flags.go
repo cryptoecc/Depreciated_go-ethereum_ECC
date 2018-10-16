@@ -163,7 +163,7 @@ var (
 	}
 	DeveloperFaucetKeyHexFlag = cli.StringFlag{
 		Name:  "dev.faucetkey",
-		Usage: "Developer account key as hex",
+		Usage: "Comma separated list of developer account key as hex",
 	}
 	IdentityFlag = cli.StringFlag{
 		Name:  "identity",
@@ -1485,32 +1485,43 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 		}
 		// Create new developer account or reuse existing one
 		var (
-			developer accounts.Account
-			key       *ecdsa.PrivateKey
-			err       error
+			developer  accounts.Account
+			developers []accounts.Account
+			key        *ecdsa.PrivateKey
+			err        error
 		)
 
-		if hex := ctx.GlobalString(DeveloperFaucetKeyHexFlag.Name); hex != "" {
-			if key, err = crypto.HexToECDSA(hex); err != nil {
-				Fatalf("Option %q: %v", DeveloperFaucetKeyHexFlag.Name, err)
-			}
-			if developer, err = ks.ImportECDSA(key, ""); err != nil {
-				Fatalf("Failed to create developer account: %v", err)
+		str := strings.Split(ctx.GlobalString(DeveloperFaucetKeyHexFlag.Name), ",")
+
+		if len(str) > 0 {
+			for _, hex := range str {
+				if key, err = crypto.HexToECDSA(hex); err != nil {
+					Fatalf("Option %q: %v", DeveloperFaucetKeyHexFlag.Name, err)
+				}
+				if developer, err = ks.ImportECDSA(key, ""); err != nil {
+					Fatalf("Failed to create developer account: %v", err)
+				}
+				developers = append(developers, developer)
 			}
 		} else if accs := ks.Accounts(); len(accs) > 0 {
 			developer = ks.Accounts()[0]
+			developers = append(developers, developer)
 		} else {
 			developer, err = ks.NewAccount("")
 			if err != nil {
 				Fatalf("Failed to create developer account: %v", err)
 			}
+			developers = append(developers, developer)
 		}
-		if err := ks.Unlock(developer, ""); err != nil {
-			Fatalf("Failed to unlock developer account: %v", err)
-		}
-		log.Info("Using developer account", "address", developer.Address)
 
-		cfg.Genesis = core.DeveloperGenesisBlock(uint64(ctx.GlobalInt(DeveloperPeriodFlag.Name)), developer.Address)
+		for _, developer := range developers {
+			if err := ks.Unlock(developer, ""); err != nil {
+				Fatalf("Failed to unlock developer account: %v", err)
+			}
+			log.Info("Using developer account", "address", developer.Address)
+		}
+
+		cfg.Genesis = core.DeveloperGenesisBlock(uint64(ctx.GlobalInt(DeveloperPeriodFlag.Name)), developers)
 		if !ctx.GlobalIsSet(MinerGasPriceFlag.Name) && !ctx.GlobalIsSet(MinerLegacyGasPriceFlag.Name) {
 			cfg.Miner.GasPrice = big.NewInt(1)
 		}
