@@ -375,8 +375,6 @@ func DeveloperGenesisBlock(period uint64, developers []accounts.Account) *Genesi
 	config := *params.AllCliqueProtocolChanges
 	config.Clique.Period = period
 
-	var data []byte
-
 	alloc := map[common.Address]GenesisAccount{
 		common.BytesToAddress([]byte{1}): {Balance: big.NewInt(1)}, // ECRecover
 		common.BytesToAddress([]byte{2}): {Balance: big.NewInt(1)}, // SHA256
@@ -390,13 +388,12 @@ func DeveloperGenesisBlock(period uint64, developers []accounts.Account) *Genesi
 
 	for _, developer := range developers {
 		alloc[developer.Address] = GenesisAccount{Balance: new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9))}
-		data = append(data, developer.Address[:]...)
 	}
 
 	// Assemble and return the genesis with the precompiles and faucet pre-funded
 	return &Genesis{
 		Config:     &config,
-		ExtraData:  append(append(make([]byte, 32), data...), make([]byte, 65)...),
+		ExtraData:  append(append(make([]byte, 32), developers[0].Address[:]...), make([]byte, 65)...),
 		GasLimit:   7500000,
 		Difficulty: big.NewInt(1),
 		Alloc:      alloc,
