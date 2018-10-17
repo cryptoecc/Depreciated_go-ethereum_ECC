@@ -15,6 +15,7 @@ make geth && build/bin/geth \
   --dev \
   --dev.period 1 \
   --targetgaslimit 7500000 \
+  --gasprice "1" \
   --dev.faucetkey "$OPERATOR_PRIV_KEY,$KEY0,$KEY1,$KEY2,$KEY3" \
   --rpc \
   --rpcport 8545 \
