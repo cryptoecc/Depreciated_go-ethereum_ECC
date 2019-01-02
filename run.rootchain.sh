@@ -19,5 +19,6 @@ make geth && build/bin/geth \
   --dev.faucetkey "$OPERATOR_PRIV_KEY,$KEY0,$KEY1,$KEY2,$KEY3" \
   --rpc \
   --rpcport 8545 \
+  --rpcapi eth,debug,net\
   --ws \
   --wsport 8546
