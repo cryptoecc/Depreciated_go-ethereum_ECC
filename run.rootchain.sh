@@ -14,7 +14,7 @@ KEY3="ae03e057a5b117295db86079ba4c8505df6074cdc54eec62f2050e677e5d4e66";
 
 make geth && build/bin/geth \
   --dev \
-  --dev.period 1 \
+  --dev.period 14 \
   --dev.faucetkey "$OPERATOR_PRIV_KEY,$KEY0,$KEY1,$KEY2,$KEY3,$CHALLENGER_KEY" \
   --miner.gastarget 7500000 \
   --miner.gasprice "10" \
