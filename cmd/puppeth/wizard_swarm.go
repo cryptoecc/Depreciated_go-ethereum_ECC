@@ -45,15 +45,15 @@ func (w *wizard) deploySwarm(boot bool) {
 	infos, err := checkSwarmNode(client, w.network, boot)
 	if err != nil {
 		if boot {
-			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
+			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort: 8500}
 		} else {
-			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
+			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort: 8500}
 		}
 	}
 	existed := err == nil
 
 	infos.genesis, _ = json.MarshalIndent(w.conf.Genesis, "", "  ")
-	infos.network = w.conf.Genesis.Config.ChainId.Int64()
+	infos.network = w.conf.Genesis.Config.ChainID.Int64()
 
 	// Figure out where the user wants to store the persistent data
 	fmt.Println()
