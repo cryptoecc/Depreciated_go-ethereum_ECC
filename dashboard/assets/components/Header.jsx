@@ -36,16 +36,6 @@ const styles = {
 	},
 };
 
-// styles contains the constant styles of the component.
-const styles = {
-	header: {
-		height: '8%',
-	},
-	toolbar: {
-		height: '100%',
-	},
-};
-
 // themeStyles returns the styles generated from the theme for the component.
 const themeStyles = (theme: Object) => ({
 	header: {
