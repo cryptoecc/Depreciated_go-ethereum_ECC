@@ -4,18 +4,29 @@ import (
 	"github.com/Onther-Tech/go-ethereum/crypto"
 	"math"
 	"math/rand"
-	"unsafe"
 )
 
 // hasher is a repetitive hasher allowing the same hash data structures to be
 // reused between hash runs instead of requiring new ones to be created.
-type hasher func(dest []byte, data []byte)
+//var hasher func(dest []byte, data []byte)
+
+type ECC struct {
+	H             [][]int
+	col_in_row    [][]int
+	row_in_col    [][]int
+	hashVector    []int
+	tmpHashVector []byte
+	outputWord    []int
+	LRqtl         [][]float64
+	LRrtl         [][]float64
+	LRpt          []float64
+	LRft          []float64
+}
 
 var n int
 var wc int
 var wr int
 var seed int
-var H [][]int
 var m int
 var col_in_row [][]int
 var row_in_col [][]int
@@ -26,7 +37,10 @@ var LRqtl [][]float64
 var LRrtl [][]float64
 var LRpt []float64
 var LRft []float64
-var cross_err = 0.01
+
+const cross_err = 0.01
+
+type matrix [][]int
 
 func decoding() {
 	maxIter := 20
@@ -45,12 +59,12 @@ func decoding() {
 	for ind := 1; ind <= maxIter; ind++ {
 		for t := 0; t < n; t++ {
 			for m := 0; m < wc; m++ {
-				temp3 := 0
+				temp3 := 0.0
 				for mp := 0; mp < wc; mp++ {
 					if mp != m {
 						a := LRrtl[t][row_in_col[mp][t]]
-						b := float64(temp3) + a
-						temp3 = infinityTest(float64(b))
+						b := float64(temp3) + float64(a)
+						temp3 = infinityTest(b)
 					}
 				}
 				LRqtl[t][row_in_col[m][t]] = infinityTest(LRft[t] + float64(temp3))
@@ -126,16 +140,31 @@ func generateHashVector(headerWithNonce []byte) {
 	outputWord = hashVector
 }
 
+//func newMatrix(rows, cols int) matrix{
+//	//if rows <= 0 {
+//	//	return nil, err
+//	//}
+//	//if cols <= 0 {
+//	//	return nil, err
+//	//}
+//
+//	m := matrix(make([][]int, rows))
+//	for i := range m {
+//		m[i] = make([]int, cols)
+//	}
+//	return m
+//}
+
 func generateH() bool {
 	//if H == null{
 	//	retrun false
 	//}
+	ecc := ECC{}
+	k := m / wc
 
-	var k = m / wc
-
-	for i := 0; i < k; 1++ {
+	for i := 0; i < k; i++ {
 		for j := i * wr; j < (i+1)*wr; j++ {
-			H[i][j] = 1
+			ecc.H[i][j] = 1
 		}
 	}
 
@@ -154,7 +183,7 @@ func generateH() bool {
 
 		for j := 0; j < n; j++ {
 			index := val[j]/wr + k*1
-			H[index][j] = 1
+			ecc.H[index][j] = 1
 		}
 	}
 	return true
@@ -189,18 +218,20 @@ func decision() bool {
 }
 
 func runLDPC(prev_hash []byte, cur_hash []byte) int {
-	set_difficulty(24, 3, 6)
+	ecc := ECC{}
+	ecc.set_difficulty(24, 3, 6)
 	generateSeed(prev_hash)
 	generateH()
 	generateQ()
 
 	nonce := 0
 	for {
-		nonce_ := uint32(nonce)
-		a := make([]byte, unsafe.Sizeof(nonce_))
-		copy(a, *(*[]byte)(unsafe.Pointer(&nonce_)))
+		cur_hash_ := string(cur_hash)
+		nonce_ := string(nonce)
 
-		generateHashVector()
+		hashAndNonce := cur_hash_ + nonce_
+		hashWithNonce := []byte(hashAndNonce)
+		generateHashVector(hashWithNonce)
 		flag := decision()
 		if flag == false {
 			decoding()
@@ -214,11 +245,16 @@ func runLDPC(prev_hash []byte, cur_hash []byte) int {
 	return nonce
 }
 
-func set_difficulty(_n int, _wc int, _wr int) bool {
+func (ecc *ECC) set_difficulty(_n int, _wc int, _wr int) bool {
 	n = _n
 	wc = _wc
 	wr = _wr
 	m = (int)(n * wc / wr)
+	ecc.H = make([][]int, n/wr)
+	for i := range ecc.H {
+		ecc.H[i] = make([]int, wr)
+	}
+	//New(n, wc, wr, m)
 	return true
 }
 
@@ -232,7 +268,7 @@ func infinityTest(x float64) float64 {
 	}
 }
 
-//var bigInfinity = 1000000
+//bigInfinity = 1000000
 func funcF(x float64) float64 {
 	if x >= 1000000 {
 		return float64(1.0 / 1000000)

@@ -1,7 +1,7 @@
 package eccpow
 
 import (
-	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/Onther-Tech/go-ethereum/common/hexutil"
@@ -9,23 +9,25 @@ import (
 
 func TestLDPC(t *testing.T) {
 	// Create a block to verify
-	hash := hexutil.MustDecode("0xc9149cc0386e689d789a1c2f3d5d169a61a6218ed30e74414dc736e442ef3d1f")
-
-	wantDigest := hexutil.MustDecode("0xe4073cffaef931d37117cefd9afd27ea0f1cad6a981dd2605c4a1ac97c519800")
-	wantResult := hexutil.MustDecode("0xd3539235ee2e6f8db665c0a72169f55b7f6c605712330b778ec3944f0eb5a557")
+	prev_hash := hexutil.MustDecode("0xd783efa4d392943503f28438ad5830b2d5964696ffc285f338585e9fe0a37a05")
+	cur_hash := hexutil.MustDecode("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
+	n = 24
+	wc = 3
+	wr = 6
 
 	//digest, result := hashimotoLight(32*1024, cache, hash, nonce)
-	if !bytes.Equal(digest, wantDigest) {
-		t.Errorf("light hashimoto digest mismatch: have %x, want %x", digest, wantDigest)
-	}
-	if !bytes.Equal(result, wantResult) {
-		t.Errorf("light hashimoto result mismatch: have %x, want %x", result, wantResult)
-	}
-	nonce = runLDPC(hash, wantDigest)
-	if !bytes.Equal(digest, wantDigest) {
-		t.Errorf("full hashimoto digest mismatch: have %x, want %x", digest, wantDigest)
-	}
-	if !bytes.Equal(result, wantResult) {
-		t.Errorf("full hashimoto result mismatch: have %x, want %x", result, wantResult)
-	}
+	//if !bytes.Equal(digest, wantDigest) {
+	//	t.Errorf("light hashimoto digest mismatch: have %x, want %x", digest, wantDigest)
+	//}
+	//if !bytes.Equal(result, wantResult) {
+	//	t.Errorf("light hashimoto result mismatch: have %x, want %x", result, wantResult)
+	//}
+	nonce := runLDPC(prev_hash, cur_hash)
+	fmt.Print(nonce)
+	//if !bytes.Equal(digest, wantDigest) {
+	//	t.Errorf("full hashimoto digest mismatch: have %x, want %x", digest, wantDigest)
+	//}
+	//if !bytes.Equal(result, wantResult) {
+	//	t.Errorf("full hashimoto result mismatch: have %x, want %x", result, wantResult)
+	//}
 }
