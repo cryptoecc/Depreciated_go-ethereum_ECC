@@ -24,8 +24,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/crypto/sha3"
-	"github.com/ethereum/go-ethereum/swarm/testutil"
+	"github.com/Onther-Tech/go-ethereum/crypto/sha3"
+	"github.com/Onther-Tech/go-ethereum/swarm/testutil"
 )
 
 /*

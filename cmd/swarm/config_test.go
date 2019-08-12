@@ -26,11 +26,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Onther-Tech/go-ethereum/cmd/utils"
+	"github.com/Onther-Tech/go-ethereum/rpc"
+	"github.com/Onther-Tech/go-ethereum/swarm"
+	"github.com/Onther-Tech/go-ethereum/swarm/api"
 	"github.com/docker/docker/pkg/reexec"
-	"github.com/ethereum/go-ethereum/cmd/utils"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ethereum/go-ethereum/swarm"
-	"github.com/ethereum/go-ethereum/swarm/api"
 )
 
 func TestConfigDump(t *testing.T) {

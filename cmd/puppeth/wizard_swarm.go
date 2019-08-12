@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/Onther-Tech/go-ethereum/accounts/keystore"
+	"github.com/Onther-Tech/go-ethereum/common"
+	"github.com/Onther-Tech/go-ethereum/log"
 )
 
 // deploySwarm creates a new node configuration based on some user input.
@@ -45,9 +45,9 @@ func (w *wizard) deploySwarm(boot bool) {
 	infos, err := checkSwarmNode(client, w.network, boot)
 	if err != nil {
 		if boot {
-			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
+			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort: 8500}
 		} else {
-			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort:8500}
+			infos = &swarmInfos{port: 30399, peersTotal: 50, bzzPort: 8500}
 		}
 	}
 	existed := err == nil

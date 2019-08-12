@@ -26,8 +26,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/Onther-Tech/go-ethereum/common"
+	"github.com/Onther-Tech/go-ethereum/log"
 )
 
 // nodeDockerfile is the Dockerfile required to run an Ethereum node.
@@ -84,13 +84,13 @@ func deploySwarm(client *sshClient, network string, swarmboot []string, config *
 
 	dockerfile := new(bytes.Buffer)
 	template.Must(template.New("").Parse(swarmDockerfile)).Execute(dockerfile, map[string]interface{}{
-		"NetworkID": config.network,
-		"Port":      config.port,
-		"Peers":     config.peersTotal,
-		"bzzPort":   config.bzzPort,
-		"SwarmBoot": strings.Join(swarmboot, ","),
-		"Unlock":    config.keyJSON != "",
-		"BzzAccount":config.bzzAccount,
+		"NetworkID":  config.network,
+		"Port":       config.port,
+		"Peers":      config.peersTotal,
+		"bzzPort":    config.bzzPort,
+		"SwarmBoot":  strings.Join(swarmboot, ","),
+		"Unlock":     config.keyJSON != "",
+		"BzzAccount": config.bzzAccount,
 	})
 	files[filepath.Join(workdir, "Dockerfile")] = dockerfile.Bytes()
 
@@ -102,7 +102,6 @@ func deploySwarm(client *sshClient, network string, swarmboot []string, config *
 		"Port":       config.port,
 		"TotalPeers": config.peersTotal,
 		"BzzAccount": config.bzzAccount,
-
 	})
 	files[filepath.Join(workdir, "docker-compose.yaml")] = composefile.Bytes()
 
@@ -135,7 +134,7 @@ type swarmInfos struct {
 	bzzPort    int
 	enode      string
 	swarmenode string
-	bzzAccount  string
+	bzzAccount string
 	keyJSON    string
 	keyPass    string
 }
@@ -144,9 +143,9 @@ type swarmInfos struct {
 // most - but not all - fields for reporting to the user.
 func (info *swarmInfos) Report() map[string]string {
 	report := map[string]string{
-		"Data directory":           info.datadir,
-		"Listener port":            strconv.Itoa(info.port),
-		"Peer count (all total)":   strconv.Itoa(info.peersTotal),
+		"Data directory":         info.datadir,
+		"Listener port":          strconv.Itoa(info.port),
+		"Peer count (all total)": strconv.Itoa(info.peersTotal),
 	}
 
 	report["Bzz account"] = info.bzzAccount
@@ -215,9 +214,9 @@ func checkSwarmNode(client *sshClient, network string, boot bool) (*swarmInfos, 
 	//}
 	// Assemble and return the useful infos
 	stats := &swarmInfos{
-		genesis:    genesis,
-		datadir:    infos.volumes["/root/.ethereum"],
-		port:       port,
+		genesis: genesis,
+		datadir: infos.volumes["/root/.ethereum"],
+		port:    port,
 		//bzzPort:    bzzPort,
 		peersTotal: totalPeers,
 		keyJSON:    keyJSON,

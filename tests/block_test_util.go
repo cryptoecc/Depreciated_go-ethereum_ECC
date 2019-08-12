@@ -24,18 +24,18 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/Onther-Tech/go-ethereum/common"
+	"github.com/Onther-Tech/go-ethereum/common/hexutil"
+	"github.com/Onther-Tech/go-ethereum/common/math"
+	"github.com/Onther-Tech/go-ethereum/consensus"
+	"github.com/Onther-Tech/go-ethereum/consensus/ethash"
+	"github.com/Onther-Tech/go-ethereum/core"
+	"github.com/Onther-Tech/go-ethereum/core/state"
+	"github.com/Onther-Tech/go-ethereum/core/types"
+	"github.com/Onther-Tech/go-ethereum/core/vm"
+	"github.com/Onther-Tech/go-ethereum/ethdb"
+	"github.com/Onther-Tech/go-ethereum/params"
+	"github.com/Onther-Tech/go-ethereum/rlp"
 )
 
 // A BlockTest checks handling of entire blocks.
@@ -158,7 +158,7 @@ func (t *BlockTest) genesis(config *params.ChainConfig) *core.Genesis {
 	}
 }
 
-/* See https://github.com/ethereum/tests/wiki/Blockchain-Tests-II
+/* See https://github.com/Onther-Tech/tests/wiki/Blockchain-Tests-II
 
    Whether a block is valid or not is a bit subtle, it's defined by presence of
    blockHeader, transactions and uncleHeaders fields. If they are missing, the block is

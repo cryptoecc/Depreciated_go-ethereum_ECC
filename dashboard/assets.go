@@ -56,7 +56,7 @@ var _indexHtml = []byte(`<!DOCTYPE html>
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
         <title>Go Ethereum Dashboard</title>
-        <link rel="shortcut icon" type="image/ico" href="https://ethereum.org/favicon.ico" />
+        <link rel="shortcut icon" type="image/ico" href="https://Onther-Tech.org/favicon.ico" />
         <style>
             ::-webkit-scrollbar {
                 width: 16px;
@@ -32727,7 +32727,7 @@ var _bundleJs = []byte((((((((((`!function(modules) {
                 }, _react2.default.createElement("span", {
                     style: _common.styles.light
                 }, "Commit "), _react2.default.createElement("a", {
-                    href: "https://github.com/ethereum/go-ethereum/commit/" + general.commit,
+                    href: "https://github.com/Onther-Tech/go-ethereum/commit/" + general.commit,
                     target: "_blank",
                     style: {
                         color: "inherit",
