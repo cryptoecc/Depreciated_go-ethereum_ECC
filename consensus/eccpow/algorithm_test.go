@@ -22,7 +22,7 @@ func TestLDPC(t *testing.T) {
 	//if !bytes.Equal(result, wantResult) {
 	//	t.Errorf("light hashimoto result mismatch: have %x, want %x", result, wantResult)
 	//}
-	nonce := runLDPC(prev_hash, cur_hash)
+	nonce := runLDPC(prev_hash, cur_hash, n, wc, wr)
 	fmt.Print(nonce)
 	//if !bytes.Equal(digest, wantDigest) {
 	//	t.Errorf("full hashimoto digest mismatch: have %x, want %x", digest, wantDigest)
@@ -30,4 +30,19 @@ func TestLDPC(t *testing.T) {
 	//if !bytes.Equal(result, wantResult) {
 	//	t.Errorf("full hashimoto result mismatch: have %x, want %x", result, wantResult)
 	//}
+}
+
+func BenchmarkECCPoW(b *testing.B) {
+	prev_hash := hexutil.MustDecode("0xd783efa4d392943503f28438ad5830b2d5964696ffc285f338585e9fe0a37a05")
+	cur_hash := hexutil.MustDecode("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
+
+	n = 24
+	wc = 3
+	wr = 6
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		runLDPC(prev_hash, cur_hash, n, wc, wr)
+	}
+
 }

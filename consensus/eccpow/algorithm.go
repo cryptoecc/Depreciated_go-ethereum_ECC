@@ -1,7 +1,7 @@
 package eccpow
 
 import (
-	"github.com/Onther-Tech/go-ethereum/crypto"
+	"crypto/sha256"
 	"math"
 	"math/rand"
 )
@@ -28,32 +28,24 @@ var wc int
 var wr int
 var seed int
 var m int
-var col_in_row [][]int
-var row_in_col [][]int
-var hashVector []int
-var tmpHashVector []byte
-var outputWord []int
-var LRqtl [][]float64
-var LRrtl [][]float64
-var LRpt []float64
-var LRft []float64
 
 const cross_err = 0.01
 
-type matrix [][]int
+type intMatrix [][]int
+type floatMatrix [][]float64
 
-func decoding() {
+func (ecc *ECC) decoding() {
 	maxIter := 20
-	for i := 0; i < len(outputWord); i++ {
-		outputWord[i] = 0
+	for i := 0; i < len(ecc.outputWord); i++ {
+		ecc.outputWord[i] = 0
 	}
 
 	for i := 0; i < n; i++ {
 		for j := 0; j < m; j++ {
-			LRqtl[i][j] = 0
-			LRrtl[i][j] = 0
+			ecc.LRqtl[j][i] = 0
+			ecc.LRrtl[j][i] = 0
 		}
-		LRft[i] = math.Log((1 - cross_err) / cross_err * float64(hashVector[i]*2-1))
+		ecc.LRft[i] = math.Log((1 - cross_err) / cross_err * float64(ecc.hashVector[i]*2-1))
 	}
 
 	for ind := 1; ind <= maxIter; ind++ {
@@ -62,12 +54,12 @@ func decoding() {
 				temp3 := 0.0
 				for mp := 0; mp < wc; mp++ {
 					if mp != m {
-						a := LRrtl[t][row_in_col[mp][t]]
+						a := ecc.LRrtl[t][ecc.row_in_col[mp][t]]
 						b := float64(temp3) + float64(a)
 						temp3 = infinityTest(b)
 					}
 				}
-				LRqtl[t][row_in_col[m][t]] = infinityTest(LRft[t] + float64(temp3))
+				ecc.LRqtl[t][ecc.row_in_col[m][t]] = infinityTest(ecc.LRft[t] + float64(temp3))
 			}
 		}
 
@@ -77,9 +69,9 @@ func decoding() {
 				sign := 1
 				for m := 0; m < wr; m++ {
 					if m != l {
-						temp3 = temp3 + funcF(math.Abs(LRqtl[col_in_row[m][k]][k]))
+						temp3 = temp3 + funcF(math.Abs(ecc.LRqtl[ecc.col_in_row[m][k]][k]))
 						temp_sign := 0
-						if LRqtl[col_in_row[m][k]][k] > 0.0 {
+						if ecc.LRqtl[ecc.col_in_row[m][k]][k] > 0.0 {
 							temp_sign = 1.0
 						} else {
 							temp_sign = -1.0
@@ -88,24 +80,24 @@ func decoding() {
 					}
 				}
 				magnitude := funcF(temp3)
-				LRrtl[col_in_row[l][k]][k] = infinityTest(float64(sign) * magnitude)
+				ecc.LRrtl[ecc.col_in_row[l][k]][k] = infinityTest(float64(sign) * magnitude)
 			}
 		}
 
 		for m := 0; m < n; m++ {
-			LRpt[m] = infinityTest(LRft[m])
+			ecc.LRpt[m] = infinityTest(ecc.LRft[m])
 			for k := 0; k < wc; k++ {
-				LRpt[m] += LRrtl[m][row_in_col[k][m]]
-				LRpt[m] = infinityTest(LRpt[m])
+				ecc.LRpt[m] += ecc.LRrtl[m][ecc.row_in_col[k][m]]
+				ecc.LRpt[m] = infinityTest(ecc.LRpt[m])
 			}
 		}
 	}
 
 	for i := 0; i < n; i++ {
-		if LRpt[i] >= 0 {
-			outputWord[i] = 1
+		if ecc.LRpt[i] >= 0 {
+			ecc.outputWord[i] = 1
 		} else {
-			outputWord[i] = 0
+			ecc.outputWord[i] = 0
 		}
 	}
 }
@@ -121,45 +113,29 @@ func generateSeed(prev_hash []byte) int {
 	return sum
 }
 
-func generateHashVector(headerWithNonce []byte) {
-	//inputSize := len(headerWithNonce)
-	//hashVector := make([]byte, n)
-	//tmpHashVector := make([]byte, 32)
-
+func (ecc *ECC) generateHashVector(headerWithNonce []byte) {
 	if n <= 256 {
-		tmp := crypto.Keccak256(headerWithNonce)
-		copy(tmpHashVector, tmp)
+		hash := sha256.New()
+		hash.Write(headerWithNonce)
+		md := hash.Sum(nil)
+		copy(ecc.tmpHashVector, md)
+		//tmp := crypto.Keccak256(headerWithNonce)
+
 	}
 
 	for i := 0; i < n/8; i++ {
-		decimal := int(tmpHashVector[i])
+		decimal := int(ecc.tmpHashVector[i])
 		for j := 7; j >= 0; j-- {
-			hashVector[j+8*(i)] = decimal % 2
+			ecc.hashVector[j+8*(i)] = decimal % 2
 		}
 	}
-	outputWord = hashVector
+	ecc.outputWord = ecc.hashVector
 }
 
-//func newMatrix(rows, cols int) matrix{
-//	//if rows <= 0 {
-//	//	return nil, err
-//	//}
-//	//if cols <= 0 {
-//	//	return nil, err
-//	//}
-//
-//	m := matrix(make([][]int, rows))
-//	for i := range m {
-//		m[i] = make([]int, cols)
-//	}
-//	return m
-//}
-
-func generateH() bool {
+func (ecc *ECC) generateH() bool {
 	//if H == null{
 	//	retrun false
 	//}
-	ecc := ECC{}
 	k := m / wc
 
 	for i := 0; i < k; i++ {
@@ -173,42 +149,40 @@ func generateH() bool {
 		for j := 0; j < n; j++ {
 			colOrder[j] = j
 		}
-		seed--
-		rand.Seed(int64(seed))
 
-		val := make([]int, len(colOrder))
-		for _, i := range rand.Perm(len(colOrder)) {
-			val[i] = colOrder[i]
-		}
+		rand.Seed(int64(seed))
+		rand.Shuffle(len(colOrder), func(i, j int) { colOrder[i], colOrder[j] = colOrder[j], colOrder[i] })
+		seed--
 
 		for j := 0; j < n; j++ {
-			index := val[j]/wr + k*1
+			index := colOrder[j]/wr + k*i
 			ecc.H[index][j] = 1
 		}
 	}
 	return true
 }
 
-func generateQ() bool {
+func (ecc *ECC) generateQ() bool {
 	row_index := 0
 	col_index := 0
 	for i := 0; i < m; i++ {
 		for j := 0; j < n; j++ {
-			col_index++
-			a := col_index % wr
-			row_index++
-			col_in_row[a][i] = j
-			row_in_col[row_index/n][j] = i
+			if ecc.H[i][j] != 0 {
+				ecc.row_in_col[row_index/n][j] = i
+				ecc.col_in_row[col_index%wr][i] = j
+				col_index++
+				row_index++
+			}
 		}
 	}
 	return true
 }
 
-func decision() bool {
+func (ecc *ECC) decision() bool {
 	for i := 0; i < m; i++ {
 		sum := 0
 		for j := 0; j < wr; j++ {
-			sum = sum + outputWord[col_in_row[j][i]]
+			sum = sum + ecc.outputWord[ecc.col_in_row[j][i]]
 		}
 		if sum%2 != 0 {
 			return false
@@ -217,12 +191,24 @@ func decision() bool {
 	return true
 }
 
-func runLDPC(prev_hash []byte, cur_hash []byte) int {
-	ecc := ECC{}
-	ecc.set_difficulty(24, 3, 6)
+func runLDPC(prev_hash []byte, cur_hash []byte, n int, wc int, wr int) int {
+	m := set_difficulty(24, 3, 6)
+	ecc := ECC{
+		H:             newIntMatrix(m, n),
+		col_in_row:    newIntMatrix(wr, m),
+		row_in_col:    newIntMatrix(wc, n),
+		hashVector:    make([]int, n),
+		tmpHashVector: make([]byte, n),
+		outputWord:    make([]int, n),
+		LRqtl:         newFloatMatrix(n, m),
+		LRrtl:         newFloatMatrix(n, m),
+		LRpt:          make([]float64, n),
+		LRft:          make([]float64, n),
+	}
+
 	generateSeed(prev_hash)
-	generateH()
-	generateQ()
+	ecc.generateH()
+	ecc.generateQ()
 
 	nonce := 0
 	for {
@@ -231,11 +217,11 @@ func runLDPC(prev_hash []byte, cur_hash []byte) int {
 
 		hashAndNonce := cur_hash_ + nonce_
 		hashWithNonce := []byte(hashAndNonce)
-		generateHashVector(hashWithNonce)
-		flag := decision()
+		ecc.generateHashVector(hashWithNonce)
+		flag := ecc.decision()
 		if flag == false {
-			decoding()
-			flag = decision()
+			ecc.decoding()
+			flag = ecc.decision()
 		}
 		if flag == true {
 			break
@@ -245,17 +231,14 @@ func runLDPC(prev_hash []byte, cur_hash []byte) int {
 	return nonce
 }
 
-func (ecc *ECC) set_difficulty(_n int, _wc int, _wr int) bool {
+func set_difficulty(_n int, _wc int, _wr int) int {
 	n = _n
 	wc = _wc
 	wr = _wr
 	m = (int)(n * wc / wr)
-	ecc.H = make([][]int, n/wr)
-	for i := range ecc.H {
-		ecc.H[i] = make([]int, wr)
-	}
+
 	//New(n, wc, wr, m)
-	return true
+	return m
 }
 
 func infinityTest(x float64) float64 {
@@ -272,10 +255,42 @@ func infinityTest(x float64) float64 {
 func funcF(x float64) float64 {
 	if x >= 1000000 {
 		return float64(1.0 / 1000000)
-
 	} else if x <= (1.0 / 1000000) {
 		return float64(1000000)
 	} else {
 		return float64(math.Log(math.Exp(x)+1)/math.Exp(x) - 1)
 	}
+}
+
+func New(n int, wr int, wc int) *ECC {
+	ecc := &ECC{
+		H:             newIntMatrix(m, n),
+		col_in_row:    newIntMatrix(wr, m),
+		row_in_col:    newIntMatrix(wc, n),
+		hashVector:    make([]int, n),
+		tmpHashVector: make([]byte, n),
+		outputWord:    make([]int, n),
+		LRqtl:         newFloatMatrix(n, m),
+		LRrtl:         newFloatMatrix(n, m),
+		LRpt:          make([]float64, n),
+		LRft:          make([]float64, n),
+	}
+
+	return ecc
+}
+
+func newIntMatrix(rows, cols int) intMatrix {
+	m := intMatrix(make([][]int, rows))
+	for i := range m {
+		m[i] = make([]int, cols)
+	}
+	return m
+}
+
+func newFloatMatrix(rows, cols int) floatMatrix {
+	m := floatMatrix(make([][]float64, rows))
+	for i := range m {
+		m[i] = make([]float64, cols)
+	}
+	return m
 }
