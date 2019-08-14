@@ -42,10 +42,15 @@ func (ecc *ECC) decoding() {
 
 	for i := 0; i < n; i++ {
 		for j := 0; j < m; j++ {
-			ecc.LRqtl[j][i] = 0
-			ecc.LRrtl[j][i] = 0
+			ecc.LRqtl[i][j] = 0
+			ecc.LRrtl[i][j] = 0
 		}
-		ecc.LRft[i] = math.Log((1 - cross_err) / cross_err * float64(ecc.hashVector[i]*2-1))
+		//ecc.LRft[i] = math.Log((1 - cross_err) / cross_err * float64(ecc.hashVector[i]*2-1))
+		if ecc.hashVector[i] == 0 {
+			ecc.LRft[i] = 1.005033585350145
+		} else {
+			ecc.LRft[i] = -1.005033585350145
+		}
 	}
 
 	for ind := 1; ind <= maxIter; ind++ {
@@ -54,9 +59,7 @@ func (ecc *ECC) decoding() {
 				temp3 := 0.0
 				for mp := 0; mp < wc; mp++ {
 					if mp != m {
-						a := ecc.LRrtl[t][ecc.row_in_col[mp][t]]
-						b := float64(temp3) + float64(a)
-						temp3 = infinityTest(b)
+						temp3 = infinityTest(temp3 + float64(ecc.LRrtl[t][ecc.row_in_col[mp][t]]))
 					}
 				}
 				ecc.LRqtl[t][ecc.row_in_col[m][t]] = infinityTest(ecc.LRft[t] + float64(temp3))
@@ -127,9 +130,11 @@ func (ecc *ECC) generateHashVector(headerWithNonce []byte) {
 		decimal := int(ecc.tmpHashVector[i])
 		for j := 7; j >= 0; j-- {
 			ecc.hashVector[j+8*(i)] = decimal % 2
+			ecc.outputWord[j+8*(i)] = decimal % 2
+			decimal = decimal / 2
 		}
 	}
-	ecc.outputWord = ecc.hashVector
+
 }
 
 func (ecc *ECC) generateH() bool {
@@ -192,7 +197,7 @@ func (ecc *ECC) decision() bool {
 }
 
 func runLDPC(prev_hash []byte, cur_hash []byte, n int, wc int, wr int) int {
-	m := set_difficulty(24, 3, 6)
+	m := set_difficulty(n, wc, wr)
 	ecc := ECC{
 		H:             newIntMatrix(m, n),
 		col_in_row:    newIntMatrix(wr, m),

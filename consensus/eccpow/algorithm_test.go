@@ -1,7 +1,6 @@
 package eccpow
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/Onther-Tech/go-ethereum/common/hexutil"
@@ -9,9 +8,9 @@ import (
 
 func TestLDPC(t *testing.T) {
 	// Create a block to verify
-	prev_hash := hexutil.MustDecode("0xd783efa4d392943503f28438ad5830b2d5964696ffc285f338585e9fe0a37a05")
+	prev_hash := hexutil.MustDecode("0x3e140b0784516af5e5ec6730f2fb20cca22f32be399b9e4ad77d32541f798cd0")
 	cur_hash := hexutil.MustDecode("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
-	n = 24
+	n = 128
 	wc = 3
 	wr = 6
 
@@ -23,7 +22,8 @@ func TestLDPC(t *testing.T) {
 	//	t.Errorf("light hashimoto result mismatch: have %x, want %x", result, wantResult)
 	//}
 	nonce := runLDPC(prev_hash, cur_hash, n, wc, wr)
-	fmt.Print(nonce)
+
+	t.Log(nonce)
 	//if !bytes.Equal(digest, wantDigest) {
 	//	t.Errorf("full hashimoto digest mismatch: have %x, want %x", digest, wantDigest)
 	//}
