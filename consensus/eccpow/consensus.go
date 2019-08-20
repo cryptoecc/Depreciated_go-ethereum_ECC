@@ -70,7 +70,7 @@ var (
 	errDanglingUncle     = errors.New("uncle's parent is not ancestor")
 	errInvalidDifficulty = errors.New("non-positive difficulty")
 
-	errInvalidPoW = errors.New("invalid proof-of-work")
+	//errInvalidPoW = errors.New("invalid proof-of-work")
 )
 
 // Author implements consensus.Engine, returning the header's coinbase as the
