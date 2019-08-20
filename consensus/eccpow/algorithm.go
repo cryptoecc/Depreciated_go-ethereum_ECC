@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"math"
 	"math/rand"
+
+	"github.com/Onther-Tech/go-ethereum/metrics"
 )
 
 // hasher is a repetitive hasher allowing the same hash data structures to be
@@ -21,6 +23,15 @@ type ECC struct {
 	LRrtl         [][]float64
 	LRpt          []float64
 	LRft          []float64
+
+	shared *ECC
+
+	// Mining related fields
+	rand     *rand.Rand    // Properly seeded random source for nonces
+	threads  int           // Number of threads to mine on if mining
+	update   chan struct{} // Notification channel to update mining parameters
+	hashrate metrics.Meter // Meter tracking the average hashrate
+
 }
 
 var n int
@@ -137,9 +148,9 @@ func (ecc *ECC) generateHashVector(headerWithNonce []byte) {
 
 }
 
-func (ecc *ECC) generateH() bool {
-	//if H == null{
-	//	retrun false
+func (ecc *ECC) generateH() [][]int {
+	//if ecc.H == nil{
+	//	return false
 	//}
 	k := m / wc
 
@@ -164,7 +175,7 @@ func (ecc *ECC) generateH() bool {
 			ecc.H[index][j] = 1
 		}
 	}
-	return true
+	return ecc.H
 }
 
 func (ecc *ECC) generateQ() bool {
@@ -197,7 +208,11 @@ func (ecc *ECC) decision() bool {
 }
 
 func runLDPC(prev_hash []byte, cur_hash []byte, n int, wc int, wr int) int {
+	//n := 24
+	//wc := 3
+	//wr := 6
 	m := set_difficulty(n, wc, wr)
+
 	ecc := ECC{
 		H:             newIntMatrix(m, n),
 		col_in_row:    newIntMatrix(wr, m),
