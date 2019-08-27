@@ -2,6 +2,7 @@ package eccpow
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"github.com/Onther-Tech/go-ethereum/crypto"
 	"math"
 	"math/big"
@@ -15,6 +16,28 @@ import (
 	"github.com/Onther-Tech/go-ethereum/metrics"
 	"github.com/Onther-Tech/go-ethereum/rpc"
 )
+
+type ECC struct {
+	shared *ECC
+
+	// Mining related fields
+	rand     *rand.Rand    // Properly seeded random source for nonces
+	threads  int           // Number of threads to mine on if mining
+	update   chan struct{} // Notification channel to update mining parameters
+	hashrate metrics.Meter // Meter tracking the average hashrate
+
+	// Remote sealer related fields
+	workCh       chan *sealTask   // Notification channel to push new work and relative result channel to remote sealer
+	fetchWorkCh  chan *sealWork   // Channel used for remote sealer to fetch mining work
+	submitWorkCh chan *mineResult // Channel used for remote sealer to submit their mining result
+	fetchRateCh  chan chan uint64 // Channel used to gather submitted hash rate for local or remote sealer.
+	submitRateCh chan *hashrate   // Channel used for remote sealer to submit their mining hashrate
+
+	lock      sync.Mutex      // Ensures thread safety for the in-memory caches and mining fields
+	closeOnce sync.Once       // Ensures exit channel will not be closed twice.
+	exitCh    chan chan error // Notification channel to exiting backend threads
+
+}
 
 // sealTask wraps a seal block with relative result channel for remote sealer thread.
 type sealTask struct {
@@ -50,328 +73,354 @@ type sealWork struct {
 // reused between hash runs instead of requiring new ones to be created.
 //var hasher func(dest []byte, data []byte)
 
-type ECC struct {
-	H             [][]int
-	col_in_row    [][]int
-	row_in_col    [][]int
-	hashVector    []int
-	tmpHashVector []byte
-	outputWord    []int
-	LRqtl         [][]float64
-	LRrtl         [][]float64
-	LRpt          []float64
-	LRft          []float64
-
-	shared *ECC
-
-	// Mining related fields
-	rand     *rand.Rand    // Properly seeded random source for nonces
-	threads  int           // Number of threads to mine on if mining
-	update   chan struct{} // Notification channel to update mining parameters
-	hashrate metrics.Meter // Meter tracking the average hashrate
-
-	// Remote sealer related fields
-	workCh       chan *sealTask   // Notification channel to push new work and relative result channel to remote sealer
-	fetchWorkCh  chan *sealWork   // Channel used for remote sealer to fetch mining work
-	submitWorkCh chan *mineResult // Channel used for remote sealer to submit their mining result
-	fetchRateCh  chan chan uint64 // Channel used to gather submitted hash rate for local or remote sealer.
-	submitRateCh chan *hashrate   // Channel used for remote sealer to submit their mining hashrate
-
-	lock      sync.Mutex      // Ensures thread safety for the in-memory caches and mining fields
-	closeOnce sync.Once       // Ensures exit channel will not be closed twice.
-	exitCh    chan chan error // Notification channel to exiting backend threads
-
-}
-
-var (
-	n    int
-	wc   int
-	wr   int
-	seed int
-	m    int
-
-	// two256 is a big integer representing 2^256
-	two256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
+const (
+	BigInfinity = 1000000.0
+	Inf         = 64.0
+	MaxNonce    = 1<<32 - 1
 )
+
+var two256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
+var n, m, wc, wr, seed int
+var LDPCNonce uint32
+
+var hashVector []int
+var outputWord []int
+
+var tmpHashVector [32]byte //32bytes => 256 bits
+
+var H [][]int
+var rowInCol [][]int
+var colInRow [][]int
+
+// These parameters are only used for the decoding function.
+var maxIter = 20    // The maximum number of iteration in the decoder
+var crossErr = 0.01 // A transisient error probability. This is also fixed as a small value
+
+var LRft []float64
+var LRpt []float64
+var LRrtl [][]float64
+var LRqtl [][]float64
 
 //const cross_err = 0.01
 
-type (
-	intMatrix   [][]int
-	floatMatrix [][]float64
-)
+//type (
+//	intMatrix   [][]int
+//	floatMatrix [][]float64
+//)
 
-func (ecc *ECC) decoding() {
-	maxIter := 20
-	for i := 0; i < len(ecc.outputWord); i++ {
-		ecc.outputWord[i] = 0
-	}
+func Decoding() {
+	var temp3, tempSign, sign, magnitude float64
+
+	outputWord = make([]int, n)
+	LRqtl = make([][]float64, n)
+	LRrtl = make([][]float64, n)
+	LRft = make([]float64, n)
 
 	for i := 0; i < n; i++ {
-		for j := 0; j < m; j++ {
-			ecc.LRqtl[i][j] = 0
-			ecc.LRrtl[i][j] = 0
-		}
-		//ecc.LRft[i] = math.Log((1 - cross_err) / cross_err * float64(ecc.hashVector[i]*2-1))
-		if ecc.hashVector[i] == 0 {
-			ecc.LRft[i] = 1.005033585350145
-		} else {
-			ecc.LRft[i] = -1.005033585350145
-		}
+		LRqtl[i] = make([]float64, m)
+		LRrtl[i] = make([]float64, m)
+		LRft[i] = math.Log((1-crossErr)/crossErr) * float64(hashVector[i]*2-1)
 	}
+	LRpt = make([]float64, n)
 
-	for ind := 1; ind <= maxIter; ind++ {
-		for t := 0; t < n; t++ {
-			for m := 0; m < wc; m++ {
-				temp3 := 0.0
-				for mp := 0; mp < wc; mp++ {
-					if mp != m {
-						temp3 = infinityTest(temp3 + float64(ecc.LRrtl[t][ecc.row_in_col[mp][t]]))
+	var i, k, l, h, ind, t, mp int
+	for ind = 1; ind <= maxIter; ind++ {
+		for t = 0; t < n; t++ {
+			for h = 0; h < wc; h++ {
+				temp3 = 0
+				for mp = 0; mp < wc; mp++ {
+					if mp != h {
+						temp3 = infinityTest(temp3 + LRrtl[t][rowInCol[mp][t]])
 					}
 				}
-				ecc.LRqtl[t][ecc.row_in_col[m][t]] = infinityTest(ecc.LRft[t] + float64(temp3))
+				LRqtl[t][rowInCol[h][t]] = infinityTest(LRft[t] + temp3)
 			}
 		}
-
-		for k := 0; k < m; k++ {
-			for l := 0; l < wr; l++ {
-				temp3 := 0.0
-				sign := 1
-				for m := 0; m < wr; m++ {
+		for k = 0; k < h; k++ {
+			for l = 0; l < wr; l++ {
+				temp3 = 0.0
+				sign = 1
+				for h = 0; h < wr; h++ {
 					if m != l {
-						temp3 = temp3 + funcF(math.Abs(ecc.LRqtl[ecc.col_in_row[m][k]][k]))
-						temp_sign := 0
-						if ecc.LRqtl[ecc.col_in_row[m][k]][k] > 0.0 {
-							temp_sign = 1.0
+						temp3 = temp3 + funcF(math.Abs(LRqtl[colInRow[h][k]][k]))
+						if LRqtl[colInRow[h][k]][k] > 0.0 {
+							tempSign = 1.0
 						} else {
-							temp_sign = -1.0
+							tempSign = -1.0
 						}
-						sign = sign * temp_sign
+						sign = sign * tempSign
 					}
 				}
-				magnitude := funcF(temp3)
-				ecc.LRrtl[ecc.col_in_row[l][k]][k] = infinityTest(float64(sign) * magnitude)
+				magnitude = funcF(temp3)
+				LRrtl[colInRow[l][k]][k] = infinityTest(sign * magnitude)
 			}
 		}
-
-		for m := 0; m < n; m++ {
-			ecc.LRpt[m] = infinityTest(ecc.LRft[m])
-			for k := 0; k < wc; k++ {
-				ecc.LRpt[m] += ecc.LRrtl[m][ecc.row_in_col[k][m]]
-				ecc.LRpt[m] = infinityTest(ecc.LRpt[m])
+		for h = 0; h < n; h++ {
+			LRpt[h] = infinityTest(LRft[h])
+			for k = 0; k < wc; k++ {
+				LRpt[h] += LRrtl[h][rowInCol[k][h]]
+				LRpt[h] = infinityTest(LRpt[h])
 			}
 		}
 	}
-
-	for i := 0; i < n; i++ {
-		if ecc.LRpt[i] >= 0 {
-			ecc.outputWord[i] = 1
+	for i = 0; i < n; i++ {
+		if LRpt[i] >= 0 {
+			outputWord[i] = 1
 		} else {
-			ecc.outputWord[i] = 0
+			outputWord[i] = 0
 		}
 	}
 }
 
-func generateSeed(prev_hash []byte) int {
+func GenerateSeed(phv []byte) int {
 	sum := 0
-	i := 1
-	for i < 31 {
-		sum = sum + int(prev_hash[i])
-		i++
+	for i := 0; i < len(phv); i++ {
+		sum += int(phv[i])
 	}
 	seed = sum
 	return sum
 }
 
-func (ecc *ECC) generateHashVector(headerWithNonce []byte) {
-	if n <= 256 {
-		hash := sha256.New()
-		hash.Write(headerWithNonce)
-		md := hash.Sum(nil)
-		copy(ecc.tmpHashVector, md)
-		//tmp := crypto.Keccak256(headerWithNonce)
+//GenerateHv need to compare with origin C++ implementation
+//Especially when sha256 function is used
+func GenerateHv(headerWithNonce []byte) {
+	//inputSize := len(headerWithNonce)
+	hashVector = make([]int, n)
 
+	if n <= 256 {
+		tmpHashVector = sha256.Sum256(headerWithNonce)
+	} else {
+		/*
+			This section is for a case in which the size of a hash vector is larger than 256.
+			This section will be implemented soon.
+		*/
 	}
 
+	/*
+		transform the constructed hexadecimal array into an binary arry
+		ex) FE01 => 11111110000 0001
+	*/
 	for i := 0; i < n/8; i++ {
-		decimal := int(ecc.tmpHashVector[i])
+		decimal := int(tmpHashVector[i])
 		for j := 7; j >= 0; j-- {
-			ecc.hashVector[j+8*(i)] = decimal % 2
-			ecc.outputWord[j+8*(i)] = decimal % 2
-			decimal = decimal / 2
+			hashVector[j+8*(i)] = decimal % 2
+			decimal /= 2
 		}
 	}
 
+	outputWord = hashVector[:n]
 }
 
-func (ecc *ECC) generateH() [][]int {
-	//if ecc.H == nil{
-	//	return false
-	//}
+//GenerateH Cannot be sure rand is same with original implementation of C++
+func GenerateH() bool {
+	var hSeed int64
+	hSeed = int64(seed)
+
+	var colOrder []int
+	/*
+		if H == nil {
+			return false
+		}
+	*/
 	k := m / wc
+	H = make([][]int, m)
+	for i := range H {
+		H[i] = make([]int, n)
+	}
 
 	for i := 0; i < k; i++ {
 		for j := i * wr; j < (i+1)*wr; j++ {
-			ecc.H[i][j] = 1
+			H[i][j] = 1
 		}
 	}
 
 	for i := 1; i < wc; i++ {
-		colOrder := make([]int, n)
+		colOrder = nil
 		for j := 0; j < n; j++ {
-			colOrder[j] = j
+			colOrder = append(colOrder, j)
 		}
 
-		rand.Seed(int64(seed))
-		rand.Shuffle(len(colOrder), func(i, j int) { colOrder[i], colOrder[j] = colOrder[j], colOrder[i] })
-		seed--
+		rand.Seed(hSeed)
+		rand.Shuffle(len(colOrder), func(i, j int) {
+			colOrder[i], colOrder[j] = colOrder[j], colOrder[i]
+		})
+		hSeed--
 
 		for j := 0; j < n; j++ {
 			index := colOrder[j]/wr + k*i
-			ecc.H[index][j] = 1
-		}
-	}
-	return ecc.H
-}
-
-func (ecc *ECC) generateQ() bool {
-	row_index := 0
-	col_index := 0
-	for i := 0; i < m; i++ {
-		for j := 0; j < n; j++ {
-			if ecc.H[i][j] != 0 {
-				ecc.col_in_row[col_index%wr][i] = j
-				ecc.row_in_col[row_index/n][j] = i
-
-				col_index++
-				row_index++
-			}
+			H[index][j] = 1
 		}
 	}
 	return true
 }
 
-func (ecc *ECC) decision() bool {
+func GenerateQ() bool {
+	colInRow = make([][]int, wr)
+	for i := 0; i < wr; i++ {
+		colInRow[i] = make([]int, m)
+	}
+
+	rowInCol = make([][]int, wc)
+	for i := 0; i < wc; i++ {
+		rowInCol[i] = make([]int, n)
+	}
+
+	rowIndex := 0
+	colIndex := 0
+
+	for i := 0; i < m; i++ {
+		for j := 0; j < n; j++ {
+			if H[i][j] == 1 {
+				colInRow[colIndex%wr][i] = j
+				colIndex++
+
+				rowInCol[rowIndex/n][j] = i
+				rowIndex++
+			}
+		}
+	}
+	return true
+}
+func Decision() bool {
 	for i := 0; i < m; i++ {
 		sum := 0
 		for j := 0; j < wr; j++ {
-			sum = sum + ecc.outputWord[ecc.col_in_row[j][i]]
+			//	fmt.Printf("i : %d, j : %d, m : %d, wr : %d \n", i, j, m, wr)
+			sum = sum + outputWord[colInRow[j][i]]
 		}
-		if sum%2 != 0 {
+		if sum%2 == 1 {
 			return false
 		}
 	}
 	return true
 }
 
-func runLDPC(prev_hash []byte, cur_hash []byte, n int, wc int, wr int) (int, []byte) {
-	//n := 24
-	//wc := 3
-	//wr := 6
-	m := set_difficulty(n, wc, wr)
+func RunLDPC(prevHash []byte, curHash []byte) (int, []byte, [][]float64) {
+	SetDifficultyUsingLevel(1)
+	LDPCNonce = 0
 
-	ecc := ECC{
-		H:             newIntMatrix(m, n),
-		col_in_row:    newIntMatrix(wr, m),
-		row_in_col:    newIntMatrix(wc, n),
-		hashVector:    make([]int, n),
-		tmpHashVector: make([]byte, n),
-		outputWord:    make([]int, n),
-		LRqtl:         newFloatMatrix(n, m),
-		LRrtl:         newFloatMatrix(n, m),
-		LRpt:          make([]float64, n),
-		LRft:          make([]float64, n),
-	}
+	var currentBlockHeader string
+	var currentBlockHeaderWithNonce string
 
-	generateSeed(prev_hash)
-	ecc.generateH()
-	ecc.generateQ()
+	GenerateSeed(prevHash)
+	GenerateH()
+	GenerateQ()
 
-	nonce := 0
-	hashWithNonce := make([]byte, len(cur_hash))
+	//PrintQ(printRowInCol)
+	//PrintQ(printColInRow)
+
 	for {
-		cur_hash_ := string(cur_hash)
-		nonce_ := string(nonce)
-
-		hashAndNonce := cur_hash_ + nonce_
-		hashWithNonce = []byte(hashAndNonce)
-		ecc.generateHashVector(hashWithNonce)
-		flag := ecc.decision()
-		if flag == false {
-			ecc.decoding()
-			flag = ecc.decision()
+		//If Nonce is bigger than MaxNonce, then update timestamp
+		if LDPCNonce >= MaxNonce {
+			LDPCNonce = 0
+			currentBlockHeader = string(curHash)
 		}
-		if flag == true {
+		currentBlockHeaderWithNonce = currentBlockHeader + fmt.Sprint(LDPCNonce)
+
+		GenerateHv([]byte(currentBlockHeaderWithNonce))
+		Decoding()
+		flag := Decision()
+
+		if !flag {
+			Decoding()
+			flag = Decision()
+		}
+		if flag {
+			fmt.Printf("\nCodeword is founded with nonce = %d\n", LDPCNonce)
 			break
 		}
-		nonce++
+		LDPCNonce++
 	}
-	return nonce, crypto.Keccak256(hashWithNonce)
+	return int(LDPCNonce), crypto.Keccak256([]byte(currentBlockHeaderWithNonce)), LRrtl
 }
 
-func set_difficulty(_n int, _wc int, _wr int) int {
-	n = _n
-	wc = _wc
-	wr = _wr
-	m = (int)(n * wc / wr)
+//func isRegular(nSize, wCol, wRow int) bool {
+//	res := float64(nSize*wCol) / float64(wRow)
+//	m := math.Round(res)
+//
+//	if int(m)*wRow == nSize*wCol {
+//		return true
+//	}
+//
+//	return false
+//}
 
-	//New(n, wc, wr, m)
-	return m
+//func SetDifficulty(nSize, wCol, wRow int) bool {
+//	if isRegular(nSize, wCol, wRow) {
+//		n = nSize
+//		wc = wCol
+//		wr = wRow
+//		m = int(n * wc / wr)
+//		return true
+//	}
+//	return false
+//}
+
+//SetDifficultyUsingLevel 0 : Very easy, 1 : Easy, 2 : Medium, 3 : hard
+func SetDifficultyUsingLevel(level int) {
+	if level == 0 {
+		n = 16
+		wc = 3
+		wr = 6
+	} else if level == 1 {
+		n = 24
+		wc = 3
+		wr = 6
+	} else if level == 2 {
+		n = 32
+		wc = 3
+		wr = 6
+	} else if level == 3 {
+		n = 48
+		wc = 3
+		wr = 6
+	} else if level == 4 {
+		n = 64
+		wc = 3
+		wr = 6
+	} else if level == 5 {
+		n = 128
+		wc = 3
+		wr = 6
+	}
+	m = int(n * wc / wr)
+}
+
+func funcF(x float64) float64 {
+	if x >= BigInfinity {
+		return 1.0 / BigInfinity
+	} else if x <= (1.0 / BigInfinity) {
+		return BigInfinity
+	} else {
+		return math.Log((math.Exp(x) + 1) / (math.Exp(x) - 1))
+	}
 }
 
 func infinityTest(x float64) float64 {
-	if x >= 64.0 {
-		return float64(64.0)
-	} else if x <= -64.0 {
-		return float64(-64.0)
+	if x >= Inf {
+		return Inf
+	} else if x <= -Inf {
+		return -Inf
 	} else {
-		return float64(x)
+		return x
 	}
 }
 
-//bigInfinity = 1000000
-func funcF(x float64) float64 {
-	if x >= 1000000 {
-		return float64(1.0 / 1000000)
-	} else if x <= (1.0 / 1000000) {
-		return float64(1000000)
-	} else {
-		return float64(math.Log(math.Exp(x)+1)/math.Exp(x) - 1)
-	}
-}
-
-func New(n int, wr int, wc int) *ECC {
-	ecc := &ECC{
-		H:             newIntMatrix(m, n),
-		col_in_row:    newIntMatrix(wr, m),
-		row_in_col:    newIntMatrix(wc, n),
-		hashVector:    make([]int, n),
-		tmpHashVector: make([]byte, n),
-		outputWord:    make([]int, n),
-		LRqtl:         newFloatMatrix(n, m),
-		LRrtl:         newFloatMatrix(n, m),
-		LRpt:          make([]float64, n),
-		LRft:          make([]float64, n),
-	}
-
-	return ecc
-}
-
-func newIntMatrix(rows, cols int) intMatrix {
-	m := intMatrix(make([][]int, rows))
-	for i := range m {
-		m[i] = make([]int, cols)
-	}
-	return m
-}
-
-func newFloatMatrix(rows, cols int) floatMatrix {
-	m := floatMatrix(make([][]float64, rows))
-	for i := range m {
-		m[i] = make([]float64, cols)
-	}
-	return m
-}
+//func newIntMatrix(rows, cols int) intMatrix {
+//	m := intMatrix(make([][]int, rows))
+//	for i := range m {
+//		m[i] = make([]int, cols)
+//	}
+//	return m
+//}
+//
+//func newFloatMatrix(rows, cols int) floatMatrix {
+//	m := floatMatrix(make([][]float64, rows))
+//	for i := range m {
+//		m[i] = make([]float64, cols)
+//	}
+//	return m
+//}
 
 // NewShared creates a full sized ecc PoW shared between all requesters running
 // in the same process.

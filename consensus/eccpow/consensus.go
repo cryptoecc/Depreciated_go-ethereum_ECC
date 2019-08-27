@@ -492,7 +492,7 @@ func (ecc *ECC) verifySeal(chain consensus.ChainReader, header *types.Header, fu
 
 	//digest, result = hashimotoFull(dataset.dataset, ecc.SealHash(header).Bytes(), header.Nonce.Uint64())
 
-	runLDPC(header.ParentHash.Bytes(), ecc.SealHash(header).Bytes(), 24, 3, 6)
+	RunLDPC(header.ParentHash.Bytes(), ecc.SealHash(header).Bytes())
 
 	//target := new(big.Int).Div(two256, header.Difficulty)
 	//if new(big.Int).SetBytes(result).Cmp(target) > 0 {

@@ -21,6 +21,7 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
@@ -152,7 +153,8 @@ search:
 			attempts = 0
 		}
 		// Compute the PoW value of this nonce
-		nonce, digest := runLDPC(hash, header.ParentHash.Bytes(), 24, 3, 6)
+		nonce, digest, matrix := RunLDPC(header.ParentHash.Bytes(), hash)
+		fmt.Print(matrix)
 
 		// Correct nonce found, create a new header with it
 		header = types.CopyHeader(header)
