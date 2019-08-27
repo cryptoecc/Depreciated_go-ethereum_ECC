@@ -123,27 +123,27 @@ func Decoding() {
 	}
 	LRpt = make([]float64, n)
 
-	var i, k, l, h, ind, t, mp int
+	var i, k, l, m, ind, t, mp int
 	for ind = 1; ind <= maxIter; ind++ {
 		for t = 0; t < n; t++ {
-			for h = 0; h < wc; h++ {
+			for m = 0; m < wc; m++ {
 				temp3 = 0
 				for mp = 0; mp < wc; mp++ {
-					if mp != h {
+					if mp != m {
 						temp3 = infinityTest(temp3 + LRrtl[t][rowInCol[mp][t]])
 					}
 				}
-				LRqtl[t][rowInCol[h][t]] = infinityTest(LRft[t] + temp3)
+				LRqtl[t][rowInCol[m][t]] = infinityTest(LRft[t] + temp3)
 			}
 		}
-		for k = 0; k < h; k++ {
+		for k = 0; k < m; k++ {
 			for l = 0; l < wr; l++ {
 				temp3 = 0.0
 				sign = 1
-				for h = 0; h < wr; h++ {
+				for m = 0; m < wr; m++ {
 					if m != l {
-						temp3 = temp3 + funcF(math.Abs(LRqtl[colInRow[h][k]][k]))
-						if LRqtl[colInRow[h][k]][k] > 0.0 {
+						temp3 = temp3 + funcF(math.Abs(LRqtl[colInRow[m][k]][k]))
+						if LRqtl[colInRow[m][k]][k] > 0.0 {
 							tempSign = 1.0
 						} else {
 							tempSign = -1.0
@@ -155,11 +155,11 @@ func Decoding() {
 				LRrtl[colInRow[l][k]][k] = infinityTest(sign * magnitude)
 			}
 		}
-		for h = 0; h < n; h++ {
-			LRpt[h] = infinityTest(LRft[h])
+		for m = 0; m < n; m++ {
+			LRpt[m] = infinityTest(LRft[m])
 			for k = 0; k < wc; k++ {
-				LRpt[h] += LRrtl[h][rowInCol[k][h]]
-				LRpt[h] = infinityTest(LRpt[h])
+				LRpt[m] += LRrtl[m][rowInCol[k][m]]
+				LRpt[m] = infinityTest(LRpt[m])
 			}
 		}
 	}
