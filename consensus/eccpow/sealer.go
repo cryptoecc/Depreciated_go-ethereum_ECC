@@ -90,6 +90,7 @@ func (ecc *ECC) Seal(chain consensus.ChainReader, block *types.Block, results ch
 			ecc.mine(block, id, nonce, abort, locals)
 		}(i, uint64(ecc.rand.Int63()))
 	}
+
 	// Wait until sealing is terminated or a nonce is found
 	go func() {
 		var result *types.Block
@@ -115,6 +116,7 @@ func (ecc *ECC) Seal(chain consensus.ChainReader, block *types.Block, results ch
 		// Wait for all miners to terminate and return the block
 		pend.Wait()
 	}()
+	fmt.Println("Done")
 	return nil
 }
 
@@ -153,6 +155,7 @@ search:
 			attempts = 0
 		}
 		// Compute the PoW value of this nonce
+
 		nonce, digest, matrix := RunLDPC(header.ParentHash.Bytes(), hash)
 		fmt.Print(matrix)
 
@@ -169,9 +172,7 @@ search:
 			logger.Trace("ecc nonce found but discarded", "nonce", nonce)
 		}
 		break search
-
 	}
-
 }
 
 // remote is a standalone goroutine to handle remote mining related stuff.

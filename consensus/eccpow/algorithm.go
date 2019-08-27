@@ -3,12 +3,14 @@ package eccpow
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/Onther-Tech/go-ethereum/crypto"
 	"math"
 	"math/big"
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/Onther-Tech/go-ethereum/crypto"
 
 	"github.com/Onther-Tech/go-ethereum/common"
 	"github.com/Onther-Tech/go-ethereum/consensus"
@@ -77,29 +79,22 @@ const (
 	BigInfinity = 1000000.0
 	Inf         = 64.0
 	MaxNonce    = 1<<32 - 1
+
+	// These parameters are only used for the decoding function.
+	maxIter  = 20   // The maximum number of iteration in the decoder
+	crossErr = 0.01 // A transisient error probability. This is also fixed as a small value
 )
 
 var two256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
-var n, m, wc, wr, seed int
-var LDPCNonce uint32
 
-var hashVector []int
-var outputWord []int
-
-var tmpHashVector [32]byte //32bytes => 256 bits
-
-var H [][]int
-var rowInCol [][]int
-var colInRow [][]int
-
-// These parameters are only used for the decoding function.
-var maxIter = 20    // The maximum number of iteration in the decoder
-var crossErr = 0.01 // A transisient error probability. This is also fixed as a small value
-
-var LRft []float64
-var LRpt []float64
-var LRrtl [][]float64
-var LRqtl [][]float64
+//Parameters for matrix and seed
+type Parameters struct {
+	n    int
+	m    int
+	wc   int
+	wr   int
+	seed int
+}
 
 //const cross_err = 0.01
 
@@ -108,27 +103,71 @@ var LRqtl [][]float64
 //	floatMatrix [][]float64
 //)
 
-func Decoding() {
+//SetDifficultyUsingLevel set matrix parameters
+//Only 4 parameters are valied 0 : Very easy, 1 : Easy, 2 : Medium, 3 : hard
+func SetDifficultyUsingLevel(level int) Parameters {
+	//level 4 is max level
+	if level > 4 {
+		level = 4
+	}
+
+	parameters := Parameters{}
+	if level == 0 {
+		parameters.n = 16
+		parameters.wc = 3
+		parameters.wr = 4
+	} else if level == 1 {
+		parameters.n = 32
+		parameters.wc = 3
+		parameters.wr = 4
+	} else if level == 2 {
+		parameters.n = 64
+		parameters.wc = 3
+		parameters.wr = 4
+	} else if level == 3 {
+		parameters.n = 128
+		parameters.wc = 3
+		parameters.wr = 4
+	}
+	parameters.m = int(parameters.n * parameters.wc / parameters.wr)
+
+	return parameters
+}
+
+//GenerateSeed generate seed using previous hash vector
+func GenerateSeed(phv []byte) int {
+	sum := 0
+	for i := 0; i < len(phv); i++ {
+		sum += int(phv[i])
+	}
+	return sum
+}
+
+//Decoding carry out LDPC decoding. It returns hashVector and outputWord
+func Decoding(parameters Parameters,
+	hashVector []int,
+	H, rowInCol, colInRow [][]int,
+) ([]int, []int, [][]float64) {
 	var temp3, tempSign, sign, magnitude float64
 
-	outputWord = make([]int, n)
-	LRqtl = make([][]float64, n)
-	LRrtl = make([][]float64, n)
-	LRft = make([]float64, n)
+	outputWord := make([]int, parameters.n)
+	LRqtl := make([][]float64, parameters.n)
+	LRrtl := make([][]float64, parameters.n)
+	LRft := make([]float64, parameters.n)
 
-	for i := 0; i < n; i++ {
-		LRqtl[i] = make([]float64, m)
-		LRrtl[i] = make([]float64, m)
-		LRft[i] = math.Log((1-crossErr)/crossErr) * float64(hashVector[i]*2-1)
+	for i := 0; i < parameters.n; i++ {
+		LRqtl[i] = make([]float64, parameters.m)
+		LRrtl[i] = make([]float64, parameters.m)
+		LRft[i] = math.Log((1-crossErr)/crossErr) * float64((hashVector[i]*2 - 1))
 	}
-	LRpt = make([]float64, n)
+	LRpt := make([]float64, parameters.n)
 
 	var i, k, l, m, ind, t, mp int
 	for ind = 1; ind <= maxIter; ind++ {
-		for t = 0; t < n; t++ {
-			for m = 0; m < wc; m++ {
+		for t = 0; t < parameters.n; t++ {
+			for m = 0; m < parameters.wc; m++ {
 				temp3 = 0
-				for mp = 0; mp < wc; mp++ {
+				for mp = 0; mp < parameters.wc; mp++ {
 					if mp != m {
 						temp3 = infinityTest(temp3 + LRrtl[t][rowInCol[mp][t]])
 					}
@@ -137,10 +176,10 @@ func Decoding() {
 			}
 		}
 		for k = 0; k < m; k++ {
-			for l = 0; l < wr; l++ {
+			for l = 0; l < parameters.wr; l++ {
 				temp3 = 0.0
 				sign = 1
-				for m = 0; m < wr; m++ {
+				for m = 0; m < parameters.wr; m++ {
 					if m != l {
 						temp3 = temp3 + funcF(math.Abs(LRqtl[colInRow[m][k]][k]))
 						if LRqtl[colInRow[m][k]][k] > 0.0 {
@@ -150,71 +189,37 @@ func Decoding() {
 						}
 						sign = sign * tempSign
 					}
+
 				}
 				magnitude = funcF(temp3)
 				LRrtl[colInRow[l][k]][k] = infinityTest(sign * magnitude)
 			}
 		}
-		for m = 0; m < n; m++ {
+		for m = 0; m < parameters.n; m++ {
 			LRpt[m] = infinityTest(LRft[m])
-			for k = 0; k < wc; k++ {
+			for k = 0; k < parameters.wc; k++ {
 				LRpt[m] += LRrtl[m][rowInCol[k][m]]
 				LRpt[m] = infinityTest(LRpt[m])
 			}
 		}
 	}
-	for i = 0; i < n; i++ {
+	for i = 0; i < parameters.n; i++ {
 		if LRpt[i] >= 0 {
 			outputWord[i] = 1
 		} else {
 			outputWord[i] = 0
 		}
 	}
+
+	return hashVector, outputWord, LRrtl
 }
 
-func GenerateSeed(phv []byte) int {
-	sum := 0
-	for i := 0; i < len(phv); i++ {
-		sum += int(phv[i])
-	}
-	seed = sum
-	return sum
-}
-
-//GenerateHv need to compare with origin C++ implementation
-//Especially when sha256 function is used
-func GenerateHv(headerWithNonce []byte) {
-	//inputSize := len(headerWithNonce)
-	hashVector = make([]int, n)
-
-	if n <= 256 {
-		tmpHashVector = sha256.Sum256(headerWithNonce)
-	} else {
-		/*
-			This section is for a case in which the size of a hash vector is larger than 256.
-			This section will be implemented soon.
-		*/
-	}
-
-	/*
-		transform the constructed hexadecimal array into an binary arry
-		ex) FE01 => 11111110000 0001
-	*/
-	for i := 0; i < n/8; i++ {
-		decimal := int(tmpHashVector[i])
-		for j := 7; j >= 0; j-- {
-			hashVector[j+8*(i)] = decimal % 2
-			decimal /= 2
-		}
-	}
-
-	outputWord = hashVector[:n]
-}
-
+//GenerateH generate H matrix using parameters
 //GenerateH Cannot be sure rand is same with original implementation of C++
-func GenerateH() bool {
+func GenerateH(parameters Parameters) [][]int {
+	var H [][]int
 	var hSeed int64
-	hSeed = int64(seed)
+	hSeed = int64(parameters.seed)
 
 	var colOrder []int
 	/*
@@ -222,21 +227,21 @@ func GenerateH() bool {
 			return false
 		}
 	*/
-	k := m / wc
-	H = make([][]int, m)
+	k := parameters.m / parameters.wc
+	H = make([][]int, parameters.m)
 	for i := range H {
-		H[i] = make([]int, n)
+		H[i] = make([]int, parameters.n)
 	}
 
 	for i := 0; i < k; i++ {
-		for j := i * wr; j < (i+1)*wr; j++ {
+		for j := i * parameters.wr; j < (i+1)*parameters.wr; j++ {
 			H[i][j] = 1
 		}
 	}
 
-	for i := 1; i < wc; i++ {
+	for i := 1; i < parameters.wc; i++ {
 		colOrder = nil
-		for j := 0; j < n; j++ {
+		for j := 0; j < parameters.n; j++ {
 			colOrder = append(colOrder, j)
 		}
 
@@ -246,45 +251,82 @@ func GenerateH() bool {
 		})
 		hSeed--
 
-		for j := 0; j < n; j++ {
-			index := colOrder[j]/wr + k*i
+		for j := 0; j < parameters.n; j++ {
+			index := (colOrder[j]/parameters.wr + k*i)
 			H[index][j] = 1
 		}
 	}
-	return true
+
+	return H
 }
 
-func GenerateQ() bool {
-	colInRow = make([][]int, wr)
-	for i := 0; i < wr; i++ {
-		colInRow[i] = make([]int, m)
+//GenerateQ generate colInRow and rowInCol matrix using H matrix
+func GenerateQ(parameters Parameters, H [][]int) ([][]int, [][]int) {
+	colInRow := make([][]int, parameters.wr)
+	for i := 0; i < parameters.wr; i++ {
+		colInRow[i] = make([]int, parameters.m)
 	}
 
-	rowInCol = make([][]int, wc)
-	for i := 0; i < wc; i++ {
-		rowInCol[i] = make([]int, n)
+	rowInCol := make([][]int, parameters.wc)
+	for i := 0; i < parameters.wc; i++ {
+		rowInCol[i] = make([]int, parameters.n)
 	}
 
 	rowIndex := 0
 	colIndex := 0
 
-	for i := 0; i < m; i++ {
-		for j := 0; j < n; j++ {
+	for i := 0; i < parameters.m; i++ {
+		for j := 0; j < parameters.n; j++ {
 			if H[i][j] == 1 {
-				colInRow[colIndex%wr][i] = j
+				colInRow[colIndex%parameters.wr][i] = j
 				colIndex++
 
-				rowInCol[rowIndex/n][j] = i
+				rowInCol[rowIndex/parameters.n][j] = i
 				rowIndex++
 			}
 		}
 	}
-	return true
+
+	return colInRow, rowInCol
 }
-func Decision() bool {
-	for i := 0; i < m; i++ {
+
+//GenerateHv generate hashvector
+//It needs to compare with origin C++ implementation Especially when sha256 function is used
+func GenerateHv(parameters Parameters, headerWithNonce []byte) []int {
+	//inputSize := len(headerWithNonce)
+	var tmpHashVector [32]byte //32bytes => 256 bits
+	hashVector := make([]int, parameters.n)
+
+	if parameters.n <= 256 {
+		tmpHashVector = sha256.Sum256(headerWithNonce)
+	} else {
+		/*
+			This section is for a case in which the size of a hash vector is larger than 256.
+			This section will be implemented soon.
+		*/
+	}
+
+	/*
+		transform the constructed hexadecimal array into an binary array
+		ex) FE01 => 11111110000 0001
+	*/
+	for i := 0; i < parameters.n/8; i++ {
+		decimal := int(tmpHashVector[i])
+		for j := 7; j >= 0; j-- {
+			hashVector[j+8*(i)] = decimal % 2
+			decimal /= 2
+		}
+	}
+
+	//outputWord := hashVector[:parameters.n]
+	return hashVector
+}
+
+//MakeDecision check outputWord is valid or not using colInRow
+func MakeDecision(parameters Parameters, colInRow [][]int, outputWord []int) bool {
+	for i := 0; i < parameters.m; i++ {
 		sum := 0
-		for j := 0; j < wr; j++ {
+		for j := 0; j < parameters.wr; j++ {
 			//	fmt.Printf("i : %d, j : %d, m : %d, wr : %d \n", i, j, m, wr)
 			sum = sum + outputWord[colInRow[j][i]]
 		}
@@ -296,16 +338,19 @@ func Decision() bool {
 }
 
 func RunLDPC(prevHash []byte, curHash []byte) (int, []byte, [][]float64) {
-	SetDifficultyUsingLevel(1)
-	LDPCNonce = 0
+	var LDPCNonce uint32
+	var hashVector []int
+	var outputWord []int
+	var LRrtl [][]float64
 
 	var currentBlockHeader string
 	var currentBlockHeaderWithNonce string
 
-	GenerateSeed(prevHash)
-	GenerateH()
-	GenerateQ()
+	parameters := SetDifficultyUsingLevel(0)
+	parameters.seed = GenerateSeed(prevHash)
 
+	H := GenerateH(parameters)
+	colInRow, rowInCol := GenerateQ(parameters, H)
 	//PrintQ(printRowInCol)
 	//PrintQ(printColInRow)
 
@@ -315,18 +360,18 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte, [][]float64) {
 			LDPCNonce = 0
 			currentBlockHeader = string(curHash)
 		}
-		currentBlockHeaderWithNonce = currentBlockHeader + fmt.Sprint(LDPCNonce)
+		currentBlockHeaderWithNonce = currentBlockHeader + strconv.FormatUint(uint64(LDPCNonce), 10)
 
-		GenerateHv([]byte(currentBlockHeaderWithNonce))
-		Decoding()
-		flag := Decision()
+		hashVector = GenerateHv(parameters, []byte(currentBlockHeaderWithNonce))
+		hashVector, outputWord, LRrtl = Decoding(parameters, hashVector, H, rowInCol, colInRow)
+		flag := MakeDecision(parameters, colInRow, outputWord)
 
 		if !flag {
-			Decoding()
-			flag = Decision()
+			hashVector, outputWord, LRrtl = Decoding(parameters, hashVector, H, rowInCol, colInRow)
+			flag = MakeDecision(parameters, colInRow, outputWord)
 		}
 		if flag {
-			fmt.Printf("\nCodeword is founded with nonce = %d\n", LDPCNonce)
+			fmt.Printf("Codeword is founded with nonce = %d\n", LDPCNonce)
 			break
 		}
 		LDPCNonce++
@@ -355,36 +400,6 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte, [][]float64) {
 //	}
 //	return false
 //}
-
-//SetDifficultyUsingLevel 0 : Very easy, 1 : Easy, 2 : Medium, 3 : hard
-func SetDifficultyUsingLevel(level int) {
-	if level == 0 {
-		n = 16
-		wc = 3
-		wr = 6
-	} else if level == 1 {
-		n = 24
-		wc = 3
-		wr = 6
-	} else if level == 2 {
-		n = 32
-		wc = 3
-		wr = 6
-	} else if level == 3 {
-		n = 48
-		wc = 3
-		wr = 6
-	} else if level == 4 {
-		n = 64
-		wc = 3
-		wr = 6
-	} else if level == 5 {
-		n = 128
-		wc = 3
-		wr = 6
-	}
-	m = int(n * wc / wr)
-}
 
 func funcF(x float64) float64 {
 	if x >= BigInfinity {

@@ -10,12 +10,11 @@ import (
 
 func TestRandomSeed(t *testing.T) {
 	prev_hash := hexutil.MustDecode("0xc9149cc0386e689d789a1c2f3d5d169a61a6218ed30e74414dc736e442ef3d1f")
-
-	SetDifficultyUsingLevel(2)
-
+	parameter := SetDifficultyUsingLevel(0)
 	GenerateSeed(prev_hash)
-	a := GenerateH()
-	b := GenerateH()
+
+	a := GenerateH(parameter)
+	b := GenerateH(parameter)
 
 	if !reflect.DeepEqual(a, b) {
 		t.Error("Wrong matrix")
