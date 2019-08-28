@@ -402,6 +402,8 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte) {
 		}
 		LDPCNonce++
 	}
+
+	fmt.Println("done")
 	return int(LDPCNonce), crypto.Keccak256([]byte(currentBlockHeaderWithNonce))
 }
 

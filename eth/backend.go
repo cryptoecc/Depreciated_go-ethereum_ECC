@@ -20,6 +20,7 @@ package eth
 import (
 	"errors"
 	"fmt"
+	"github.com/Onther-Tech/go-ethereum/consensus/eccpow"
 	"math/big"
 	"runtime"
 	"sync"
@@ -224,6 +225,11 @@ func CreateConsensusEngine(ctx *node.ServiceContext, chainConfig *params.ChainCo
 	// If proof-of-authority is requested, set it up
 	if chainConfig.Clique != nil {
 		return clique.New(chainConfig.Clique, db)
+	}
+	if chainConfig.EccPoW != nil {
+		engine := eccpow.New(eccpow.Config{}, notify, noverify)
+		engine.SetThreads(-1)
+		return engine
 	}
 	// Otherwise assume proof-of-work
 	switch config.PowMode {

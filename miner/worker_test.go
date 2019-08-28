@@ -149,7 +149,7 @@ func TestPendingStateAndBlockClique(t *testing.T) {
 	testPendingStateAndBlock(t, cliqueChainConfig, clique.New(cliqueChainConfig.Clique, ethdb.NewMemDatabase()))
 }
 func TestPendingStateAndBlockEccPoW(t *testing.T) {
-	testPendingStateAndBlock(t, eccpowChainConfig, ethash.NewFaker())
+	testPendingStateAndBlock(t, eccpowChainConfig, eccpow.NewFaker())
 }
 
 func testPendingStateAndBlock(t *testing.T, chainConfig *params.ChainConfig, engine consensus.Engine) {
@@ -182,6 +182,9 @@ func TestEmptyWorkEthash(t *testing.T) {
 }
 func TestEmptyWorkClique(t *testing.T) {
 	testEmptyWork(t, cliqueChainConfig, clique.New(cliqueChainConfig.Clique, ethdb.NewMemDatabase()))
+}
+func TestEmptyWorkEccPoW(t *testing.T) {
+	testEmptyWork(t, eccpowChainConfig, eccpow.NewFaker())
 }
 
 func testEmptyWork(t *testing.T, chainConfig *params.ChainConfig, engine consensus.Engine) {
@@ -293,8 +296,68 @@ func TestStreamUncleBlock(t *testing.T) {
 	}
 }
 
+func TestStreamEccUncleBlock(t *testing.T) {
+	eccpow := eccpow.NewFaker()
+	defer eccpow.Close()
+
+	w, b := newTestWorker(t, ethashChainConfig, eccpow, 1)
+	defer w.close()
+
+	var taskCh = make(chan struct{})
+
+	taskIndex := 0
+	w.newTaskHook = func(task *task) {
+		if task.block.NumberU64() == 2 {
+			if taskIndex == 2 {
+				have := task.block.Header().UncleHash
+				want := types.CalcUncleHash([]*types.Header{b.uncleBlock.Header()})
+				if have != want {
+					t.Errorf("uncle hash mismatch: have %s, want %s", have.Hex(), want.Hex())
+				}
+			}
+			taskCh <- struct{}{}
+			taskIndex += 1
+		}
+	}
+	w.skipSealHook = func(task *task) bool {
+		return true
+	}
+	w.fullTaskHook = func() {
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Ensure worker has finished initialization
+	for {
+		b := w.pendingBlock()
+		if b != nil && b.NumberU64() == 2 {
+			break
+		}
+	}
+	w.start()
+
+	// Ignore the first two works
+	for i := 0; i < 2; i += 1 {
+		select {
+		case <-taskCh:
+		case <-time.NewTimer(time.Second).C:
+			t.Error("new task timeout")
+		}
+	}
+	b.PostChainEvents([]interface{}{core.ChainSideEvent{Block: b.uncleBlock}})
+
+	select {
+	case <-taskCh:
+	case <-time.NewTimer(time.Second).C:
+		t.Error("new task timeout")
+	}
+}
+
 func TestRegenerateMiningBlockEthash(t *testing.T) {
 	testRegenerateMiningBlock(t, ethashChainConfig, ethash.NewFaker())
+}
+
+func TestRegenerateMiningBlockEccPoW(t *testing.T) {
+	testRegenerateMiningBlock(t, eccpowChainConfig, eccpow.NewFaker())
 }
 
 func TestRegenerateMiningBlockClique(t *testing.T) {
@@ -360,6 +423,10 @@ func testRegenerateMiningBlock(t *testing.T, chainConfig *params.ChainConfig, en
 
 func TestAdjustIntervalEthash(t *testing.T) {
 	testAdjustInterval(t, ethashChainConfig, ethash.NewFaker())
+}
+
+func TestAdjustIntervalEccPoW(t *testing.T) {
+	testAdjustInterval(t, eccpowChainConfig, eccpow.NewFaker())
 }
 
 func TestAdjustIntervalClique(t *testing.T) {

@@ -20,6 +20,7 @@ package utils
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"github.com/Onther-Tech/go-ethereum/consensus/ethash"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -34,7 +35,7 @@ import (
 	"github.com/Onther-Tech/go-ethereum/common/fdlimit"
 	"github.com/Onther-Tech/go-ethereum/consensus"
 	"github.com/Onther-Tech/go-ethereum/consensus/clique"
-	"github.com/Onther-Tech/go-ethereum/consensus/ethash"
+	"github.com/Onther-Tech/go-ethereum/consensus/eccpow"
 	"github.com/Onther-Tech/go-ethereum/core"
 	"github.com/Onther-Tech/go-ethereum/core/state"
 	"github.com/Onther-Tech/go-ethereum/core/vm"
@@ -1448,6 +1449,11 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 	var engine consensus.Engine
 	if config.Clique != nil {
 		engine = clique.New(config.Clique, chainDb)
+	} else if config.EccPoW != nil {
+		engine = eccpow.NewFaker()
+		if !ctx.GlobalBool(EccPoWFlag.Name) {
+			engine = eccpow.New(eccpow.Config{}, nil, false)
+		}
 	} else {
 		engine = ethash.NewFaker()
 		if !ctx.GlobalBool(FakePoWFlag.Name) {
@@ -1461,6 +1467,7 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 			}, nil, false)
 		}
 	}
+
 	if gcmode := ctx.GlobalString(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
 	}
