@@ -2,6 +2,7 @@ package eccpow
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
