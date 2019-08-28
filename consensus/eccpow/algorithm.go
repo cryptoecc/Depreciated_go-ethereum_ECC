@@ -2,7 +2,6 @@ package eccpow
 
 import (
 	"crypto/sha256"
-	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
@@ -20,7 +19,7 @@ import (
 )
 
 type ECC struct {
-	shared *ECC
+	config Config
 
 	// Mining related fields
 	rand     *rand.Rand    // Properly seeded random source for nonces
@@ -35,10 +34,29 @@ type ECC struct {
 	fetchRateCh  chan chan uint64 // Channel used to gather submitted hash rate for local or remote sealer.
 	submitRateCh chan *hashrate   // Channel used for remote sealer to submit their mining hashrate
 
+	shared    *ECC          // Shared PoW verifier to avoid cache regeneration
+	fakeFail  uint64        // Block number which fails PoW check even in fake mode
+	fakeDelay time.Duration // Time delay to sleep for before returning from verify
+
 	lock      sync.Mutex      // Ensures thread safety for the in-memory caches and mining fields
 	closeOnce sync.Once       // Ensures exit channel will not be closed twice.
 	exitCh    chan chan error // Notification channel to exiting backend threads
 
+}
+
+type Mode uint
+
+const (
+	ModeNormal Mode = iota
+	ModeShared
+	ModeTest
+	ModeFake
+	ModeFullFake
+)
+
+// Config are the configuration parameters of the ethash.
+type Config struct {
+	PowMode Mode
 }
 
 // sealTask wraps a seal block with relative result channel for remote sealer thread.
@@ -85,7 +103,11 @@ const (
 	crossErr = 0.01 // A transisient error probability. This is also fixed as a small value
 )
 
-var two256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
+var (
+	two256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
+
+	sharedECC = New(Config{ModeNormal}, nil, false)
+)
 
 //Parameters for matrix and seed
 type Parameters struct {
@@ -117,14 +139,18 @@ func SetDifficultyUsingLevel(level int) Parameters {
 		parameters.wc = 3
 		parameters.wr = 4
 	} else if level == 1 {
-		parameters.n = 32
+		parameters.n = 24
 		parameters.wc = 3
 		parameters.wr = 4
 	} else if level == 2 {
+		parameters.n = 32
+		parameters.wc = 3
+		parameters.wr = 4
+	} else if level == 4 {
 		parameters.n = 64
 		parameters.wc = 3
 		parameters.wr = 4
-	} else if level == 3 {
+	} else if level == 5 {
 		parameters.n = 128
 		parameters.wc = 3
 		parameters.wr = 4
@@ -147,7 +173,7 @@ func GenerateSeed(phv []byte) int {
 func Decoding(parameters Parameters,
 	hashVector []int,
 	H, rowInCol, colInRow [][]int,
-) ([]int, []int, [][]float64) {
+) ([]int, []int) {
 	var temp3, tempSign, sign, magnitude float64
 
 	outputWord := make([]int, parameters.n)
@@ -211,7 +237,7 @@ func Decoding(parameters Parameters,
 		}
 	}
 
-	return hashVector, outputWord, LRrtl
+	return hashVector, outputWord
 }
 
 //GenerateH generate H matrix using parameters
@@ -252,7 +278,7 @@ func GenerateH(parameters Parameters) [][]int {
 		hSeed--
 
 		for j := 0; j < parameters.n; j++ {
-			index := (colOrder[j]/parameters.wr + k*i)
+			index := colOrder[j]/parameters.wr + k*i
 			H[index][j] = 1
 		}
 	}
@@ -337,11 +363,11 @@ func MakeDecision(parameters Parameters, colInRow [][]int, outputWord []int) boo
 	return true
 }
 
-func RunLDPC(prevHash []byte, curHash []byte) (int, []byte, [][]float64) {
+func RunLDPC(prevHash []byte, curHash []byte) (int, []byte) {
 	var LDPCNonce uint32
 	var hashVector []int
 	var outputWord []int
-	var LRrtl [][]float64
+	//var LRrtl [][]float64
 
 	var currentBlockHeader string
 	var currentBlockHeaderWithNonce string
@@ -363,20 +389,20 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte, [][]float64) {
 		currentBlockHeaderWithNonce = currentBlockHeader + strconv.FormatUint(uint64(LDPCNonce), 10)
 
 		hashVector = GenerateHv(parameters, []byte(currentBlockHeaderWithNonce))
-		hashVector, outputWord, LRrtl = Decoding(parameters, hashVector, H, rowInCol, colInRow)
+		hashVector, outputWord = Decoding(parameters, hashVector, H, rowInCol, colInRow)
 		flag := MakeDecision(parameters, colInRow, outputWord)
 
 		if !flag {
-			hashVector, outputWord, LRrtl = Decoding(parameters, hashVector, H, rowInCol, colInRow)
+			hashVector, outputWord = Decoding(parameters, hashVector, H, rowInCol, colInRow)
 			flag = MakeDecision(parameters, colInRow, outputWord)
 		}
 		if flag {
-			fmt.Printf("Codeword is founded with nonce = %d\n", LDPCNonce)
+			//fmt.Printf("Codeword is founded with nonce = %d\n", LDPCNonce)
 			break
 		}
 		LDPCNonce++
 	}
-	return int(LDPCNonce), crypto.Keccak256([]byte(currentBlockHeaderWithNonce)), LRrtl
+	return int(LDPCNonce), crypto.Keccak256([]byte(currentBlockHeaderWithNonce))
 }
 
 //func isRegular(nSize, wCol, wRow int) bool {
@@ -437,14 +463,12 @@ func infinityTest(x float64) float64 {
 //	return m
 //}
 
-// NewShared creates a full sized ecc PoW shared between all requesters running
-// in the same process.
-//func NewShared() *ECC {
-//	return &ecc{shared: sharedecc}
-//}
-
-func NewTester(notify []string, noverify bool) *ECC {
+// New creates a full sized ethash PoW scheme and starts a background thread for
+// remote mining, also optionally notifying a batch of remote services of new work
+// packages.
+func New(config Config, notify []string, noverify bool) *ECC {
 	ecc := &ECC{
+		config:       config,
 		update:       make(chan struct{}),
 		hashrate:     metrics.NewMeterForced(),
 		workCh:       make(chan *sealTask),
@@ -456,6 +480,73 @@ func NewTester(notify []string, noverify bool) *ECC {
 	}
 	go ecc.remote(notify, noverify)
 	return ecc
+}
+
+func NewTester(notify []string, noverify bool) *ECC {
+	ecc := &ECC{
+		config:       Config{PowMode: ModeTest},
+		update:       make(chan struct{}),
+		hashrate:     metrics.NewMeterForced(),
+		workCh:       make(chan *sealTask),
+		fetchWorkCh:  make(chan *sealWork),
+		submitWorkCh: make(chan *mineResult),
+		fetchRateCh:  make(chan chan uint64),
+		submitRateCh: make(chan *hashrate),
+		exitCh:       make(chan chan error),
+	}
+	go ecc.remote(notify, noverify)
+	return ecc
+}
+
+// NewFaker creates a ethash consensus engine with a fake PoW scheme that accepts
+// all blocks' seal as valid, though they still have to conform to the Ethereum
+// consensus rules.
+func NewFaker() *ECC {
+	return &ECC{
+		config: Config{
+			PowMode: ModeFake,
+		},
+	}
+}
+
+// NewFakeFailer creates a ethash consensus engine with a fake PoW scheme that
+// accepts all blocks as valid apart from the single one specified, though they
+// still have to conform to the Ethereum consensus rules.
+func NewFakeFailer(fail uint64) *ECC {
+	return &ECC{
+		config: Config{
+			PowMode: ModeFake,
+		},
+		fakeFail: fail,
+	}
+}
+
+// NewFakeDelayer creates a ethash consensus engine with a fake PoW scheme that
+// accepts all blocks as valid, but delays verifications by some time, though
+// they still have to conform to the Ethereum consensus rules.
+func NewFakeDelayer(delay time.Duration) *ECC {
+	return &ECC{
+		config: Config{
+			PowMode: ModeFake,
+		},
+		fakeDelay: delay,
+	}
+}
+
+// NewFullFaker creates an ethash consensus engine with a full fake scheme that
+// accepts all blocks as valid, without checking any consensus rules whatsoever.
+func NewFullFaker() *ECC {
+	return &ECC{
+		config: Config{
+			PowMode: ModeFullFake,
+		},
+	}
+}
+
+// NewShared creates a full sized ethash PoW shared between all requesters running
+// in the same process.
+func NewShared() *ECC {
+	return &ECC{shared: sharedECC}
 }
 
 // Close closes the exit channel to notify all backend threads exiting.

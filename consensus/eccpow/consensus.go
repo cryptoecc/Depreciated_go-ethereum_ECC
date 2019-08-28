@@ -17,6 +17,7 @@
 package eccpow
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/big"
@@ -69,8 +70,8 @@ var (
 	errUncleIsAncestor   = errors.New("uncle is ancestor")
 	errDanglingUncle     = errors.New("uncle's parent is not ancestor")
 	errInvalidDifficulty = errors.New("non-positive difficulty")
-
-	//errInvalidPoW = errors.New("invalid proof-of-work")
+	errInvalidMixDigest  = errors.New("invalid mix digest")
+	errInvalidPoW        = errors.New("invalid proof-of-work")
 )
 
 // Author implements consensus.Engine, returning the header's coinbase as the
@@ -83,7 +84,9 @@ func (ecc *ECC) Author(header *types.Header) (common.Address, error) {
 // stock Ethereum ecc engine.
 func (ecc *ECC) VerifyHeader(chain consensus.ChainReader, header *types.Header, seal bool) error {
 	// If we're running a full engine faking, accept any input as valid
-
+	if ecc.config.PowMode == ModeFullFake {
+		return nil
+	}
 	// Short circuit if the header is known, or it's parent not
 	number := header.Number.Uint64()
 	if chain.GetHeader(header.Hash(), number) != nil {
@@ -102,7 +105,13 @@ func (ecc *ECC) VerifyHeader(chain consensus.ChainReader, header *types.Header, 
 // a results channel to retrieve the async verifications.
 func (ecc *ECC) VerifyHeaders(chain consensus.ChainReader, headers []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {
 	// If we're running a full engine faking, accept any input as valid
-
+	if ecc.config.PowMode == ModeFullFake || len(headers) == 0 {
+		abort, results := make(chan struct{}), make(chan error, len(headers))
+		for i := 0; i < len(headers); i++ {
+			results <- nil
+		}
+		return abort, results
+	}
 	// Spawn as many workers as allowed threads
 	workers := runtime.GOMAXPROCS(0)
 	if len(headers) < workers {
@@ -175,7 +184,9 @@ func (ecc *ECC) verifyHeaderWorker(chain consensus.ChainReader, headers []*types
 // rules of the stock Ethereum ecc engine.
 func (ecc *ECC) VerifyUncles(chain consensus.ChainReader, block *types.Block) error {
 	// If we're running a full engine faking, accept any input as valid
-
+	if ecc.config.PowMode == ModeFullFake {
+		return nil
+	}
 	// Verify that there are at most 2 uncles included in this block
 	if len(block.Uncles()) > maxUncles {
 		return errTooManyUncles
@@ -477,7 +488,14 @@ func (ecc *ECC) VerifySeal(chain consensus.ChainReader, header *types.Header) er
 // either using the usual ecc cache for it, or alternatively using a full DAG
 // to make remote mining fast.
 func (ecc *ECC) verifySeal(chain consensus.ChainReader, header *types.Header, fulldag bool) error {
-
+	// If we're running a fake PoW, accept any seal as valid
+	if ecc.config.PowMode == ModeFake || ecc.config.PowMode == ModeFullFake {
+		time.Sleep(ecc.fakeDelay)
+		if ecc.fakeFail == header.Number.Uint64() {
+			return errInvalidPoW
+		}
+		return nil
+	}
 	// If we're running a shared PoW, delegate verification to it
 	if ecc.shared != nil {
 		return ecc.shared.verifySeal(chain, header, fulldag)
@@ -487,13 +505,17 @@ func (ecc *ECC) verifySeal(chain consensus.ChainReader, header *types.Header, fu
 		return errInvalidDifficulty
 	}
 	// Recompute the digest and PoW values
+	//number := header.Number.Uint64()
 
-	// If fast-but-heavy PoW verification was requested, use an ecc dataset
-
-	//digest, result = hashimotoFull(dataset.dataset, ecc.SealHash(header).Bytes(), header.Nonce.Uint64())
-
-	RunLDPC(header.ParentHash.Bytes(), ecc.SealHash(header).Bytes())
-
+	var (
+		digest []byte
+		nonce  int
+	)
+	nonce, digest = RunLDPC(header.ParentHash.Bytes(), ecc.SealHash(header).Bytes())
+	fmt.Println(nonce)
+	if !bytes.Equal(header.MixDigest[:], digest) {
+		return errInvalidMixDigest
+	}
 	//target := new(big.Int).Div(two256, header.Difficulty)
 	//if new(big.Int).SetBytes(result).Cmp(target) > 0 {
 	//	return errInvalidPoW

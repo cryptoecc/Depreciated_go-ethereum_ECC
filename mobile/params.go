@@ -50,6 +50,14 @@ func RinkebyGenesis() string {
 	return string(enc)
 }
 
+func EccPoWGenesis() string {
+	enc, err := json.Marshal(core.EccGenesisBlock())
+	if err != nil {
+		panic(err)
+	}
+	return string(enc)
+}
+
 // FoundationBootnodes returns the enode URLs of the P2P bootstrap nodes operated
 // by the foundation running the V5 discovery protocol.
 func FoundationBootnodes() *Enodes {

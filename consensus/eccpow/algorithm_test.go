@@ -1,6 +1,7 @@
 package eccpow
 
 import (
+	"bytes"
 	"reflect"
 	"testing"
 
@@ -21,31 +22,19 @@ func TestRandomSeed(t *testing.T) {
 	} else {
 		t.Log("Pass")
 	}
-	//t.Log(a)
-	//for i := 0; i < len(a); i++ {
-	//	for j:=0; j < len(a[i]); j++{
-	//		if a[i][j] != b[i][j] {
-	//			t.Log(a[i][j])
-	//			t.Error("Wrong matrix")
-	//		} else {
-	//			t.Log(" true")
-	//		}
-	//	}
-	//}
 }
 
 func TestLDPC(t *testing.T) {
-
 	prevHash := hexutil.MustDecode("0x0000000000000000000000000000000000000000000000000000000000000000")
 	curHash := hexutil.MustDecode("0xca2ff06caae7c94dc968be7d76d0fbf60dd2e1989ee9bf0d5931e48564d5143b")
-	t.Log(hexutil.Encode(prevHash))
-	nonce, hash, matrix := RunLDPC(prevHash, curHash)
-	for i := 0; i < len(matrix); i++ {
-		t.Log(matrix[i])
-	}
-	t.Log(len(matrix))
+	nonce, mixDigest := RunLDPC(prevHash, curHash)
 
-	t.Log(len(hash))
+	wantDigest := hexutil.MustDecode("0x535306ee4b42c92aecd0e71fca98572064f049c2babb2769faa3bbd87d67ec2d")
+
+	if !bytes.Equal(mixDigest, wantDigest) {
+		t.Errorf("light hashimoto digest mismatch: have %x, want %x", mixDigest, wantDigest)
+	}
+
 	t.Log(nonce)
 }
 

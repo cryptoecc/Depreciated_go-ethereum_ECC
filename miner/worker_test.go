@@ -17,6 +17,7 @@
 package miner
 
 import (
+	"github.com/Onther-Tech/go-ethereum/consensus/eccpow"
 	"math/big"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ var (
 	testTxPoolConfig  core.TxPoolConfig
 	ethashChainConfig *params.ChainConfig
 	cliqueChainConfig *params.ChainConfig
+	eccpowChainConfig *params.ChainConfig
 
 	// Test accounts
 	testBankKey, _  = crypto.GenerateKey()
@@ -58,6 +60,7 @@ func init() {
 	testTxPoolConfig.Journal = ""
 	ethashChainConfig = params.TestChainConfig
 	cliqueChainConfig = params.TestChainConfig
+	eccpowChainConfig = params.EccTestConfig
 	cliqueChainConfig.Clique = &params.CliqueConfig{
 		Period: 10,
 		Epoch:  30000,
@@ -87,6 +90,7 @@ func newTestWorkerBackend(t *testing.T, chainConfig *params.ChainConfig, engine 
 	)
 
 	switch engine.(type) {
+	case *eccpow.ECC:
 	case *clique.Clique:
 		gspec.ExtraData = make([]byte, 32+common.AddressLength+65)
 		copy(gspec.ExtraData[32:], testBankAddress[:])
@@ -143,6 +147,9 @@ func TestPendingStateAndBlockEthash(t *testing.T) {
 }
 func TestPendingStateAndBlockClique(t *testing.T) {
 	testPendingStateAndBlock(t, cliqueChainConfig, clique.New(cliqueChainConfig.Clique, ethdb.NewMemDatabase()))
+}
+func TestPendingStateAndBlockEccPoW(t *testing.T) {
+	testPendingStateAndBlock(t, eccpowChainConfig, ethash.NewFaker())
 }
 
 func testPendingStateAndBlock(t *testing.T, chainConfig *params.ChainConfig, engine consensus.Engine) {

@@ -372,6 +372,29 @@ func DeveloperGenesisBlock(period uint64, developers []accounts.Account) *Genesi
 	}
 }
 
+func EccGenesisBlock() *Genesis {
+	config := *params.AllEccPoWProtocolChanges
+
+	alloc := map[common.Address]GenesisAccount{
+		common.BytesToAddress([]byte{1}): {Balance: big.NewInt(1)}, // ECRecover
+		common.BytesToAddress([]byte{2}): {Balance: big.NewInt(1)}, // SHA256
+		common.BytesToAddress([]byte{3}): {Balance: big.NewInt(1)}, // RIPEMD
+		common.BytesToAddress([]byte{4}): {Balance: big.NewInt(1)}, // Identity
+		common.BytesToAddress([]byte{5}): {Balance: big.NewInt(1)}, // ModExp
+		common.BytesToAddress([]byte{6}): {Balance: big.NewInt(1)}, // ECAdd
+		common.BytesToAddress([]byte{7}): {Balance: big.NewInt(1)}, // ECScalarMul
+		common.BytesToAddress([]byte{8}): {Balance: big.NewInt(1)}, // ECPairing
+	}
+
+	return &Genesis{
+		Config:     &config,
+		ExtraData:  hexutil.MustDecode("0x52657370656374206d7920617574686f7269746168207e452e436172746d616e42eb768f2244c8811c63729a21a3569731535f067ffc57839b00206d1ad20c69a1981b489f772031b279182d99e65703f0076e4812653aab85fca0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   7500000,
+		Difficulty: big.NewInt(1),
+		Alloc:      alloc,
+	}
+}
+
 func decodePrealloc(data string) GenesisAlloc {
 	var p []struct{ Addr, Balance *big.Int }
 	if err := rlp.NewStream(strings.NewReader(data), 0).Decode(&p); err != nil {

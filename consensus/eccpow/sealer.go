@@ -21,7 +21,6 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
@@ -50,7 +49,17 @@ var (
 // Seal implements consensus.Engine, attempting to find a nonce that satisfies
 // the block's difficulty requirements.
 func (ecc *ECC) Seal(chain consensus.ChainReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
-
+	// If we're running a fake PoW, simply return a 0 nonce immediately
+	if ecc.config.PowMode == ModeFake || ecc.config.PowMode == ModeFullFake {
+		header := block.Header()
+		header.Nonce, header.MixDigest = types.BlockNonce{}, common.Hash{}
+		select {
+		case results <- block.WithSeal(header):
+		default:
+			log.Warn("Sealing result is not read by miner", "mode", "fake", "sealhash", ecc.SealHash(block.Header()))
+		}
+		return nil
+	}
 	// If we're running a shared PoW, delegate sealing to it
 	if ecc.shared != nil {
 		return ecc.shared.Seal(chain, block, results, stop)
@@ -116,7 +125,7 @@ func (ecc *ECC) Seal(chain consensus.ChainReader, block *types.Block, results ch
 		// Wait for all miners to terminate and return the block
 		pend.Wait()
 	}()
-	fmt.Println("Done")
+
 	return nil
 }
 
@@ -156,8 +165,7 @@ search:
 		}
 		// Compute the PoW value of this nonce
 
-		nonce, digest, matrix := RunLDPC(header.ParentHash.Bytes(), hash)
-		fmt.Print(matrix)
+		nonce, digest := RunLDPC(header.ParentHash.Bytes(), hash)
 
 		// Correct nonce found, create a new header with it
 		header = types.CopyHeader(header)
