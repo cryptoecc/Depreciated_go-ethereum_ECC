@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/Onther-Tech/go-ethereum/common"
 )
 
 // precompiledTest defines the input/output pairs for precompiled contract tests.

@@ -20,9 +20,9 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/Onther-Tech/go-ethereum/metrics"
+	"github.com/Onther-Tech/go-ethereum/p2p"
 	"github.com/elastic/gosigar"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/p2p"
 )
 
 // meterCollector returns a function, which retrieves the count of a specific meter.
