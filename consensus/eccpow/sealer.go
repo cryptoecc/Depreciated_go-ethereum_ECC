@@ -171,6 +171,7 @@ search:
 		header = types.CopyHeader(header)
 		//header.Nonce = types.EncodeNonce(nonce)
 		header.MixDigest = common.BytesToHash(digest)
+		header.Nonce = types.EncodeNonce(uint64(nonce))
 
 		// Seal and return a block (if still needed)
 		select {
