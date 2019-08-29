@@ -33,7 +33,7 @@ func TestBlockchain(t *testing.T) {
 
 	// These are not formatted like the rest -- due to the large postState, the postState
 	// was replaced by a hash, instead of a genesisAlloc map
-	// See https://github.com/ethereum/tests/pull/616
+	// See https://github.com/Onther-Tech/tests/pull/616
 	bt.skipLoad(`.*bcExploitTest/ShanghaiLove.json`)
 	bt.skipLoad(`.*bcExploitTest/SuicideIssue.json`)
 

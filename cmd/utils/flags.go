@@ -32,37 +32,37 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/fdlimit"
-	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/clique"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/dashboard"
-	"github.com/ethereum/go-ethereum/eth"
-	"github.com/ethereum/go-ethereum/eth/downloader"
-	"github.com/ethereum/go-ethereum/eth/gasprice"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/ethstats"
-	"github.com/ethereum/go-ethereum/graphql"
-	"github.com/ethereum/go-ethereum/les"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/influxdb"
-	"github.com/ethereum/go-ethereum/miner"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/nat"
-	"github.com/ethereum/go-ethereum/p2p/netutil"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
-	whisper "github.com/ethereum/go-ethereum/whisper/whisperv6"
+	"github.com/Onther-Tech/go-ethereum/accounts"
+	"github.com/Onther-Tech/go-ethereum/accounts/keystore"
+	"github.com/Onther-Tech/go-ethereum/common"
+	"github.com/Onther-Tech/go-ethereum/common/fdlimit"
+	"github.com/Onther-Tech/go-ethereum/consensus"
+	"github.com/Onther-Tech/go-ethereum/consensus/clique"
+	"github.com/Onther-Tech/go-ethereum/consensus/ethash"
+	"github.com/Onther-Tech/go-ethereum/core"
+	"github.com/Onther-Tech/go-ethereum/core/vm"
+	"github.com/Onther-Tech/go-ethereum/crypto"
+	"github.com/Onther-Tech/go-ethereum/dashboard"
+	"github.com/Onther-Tech/go-ethereum/eth"
+	"github.com/Onther-Tech/go-ethereum/eth/downloader"
+	"github.com/Onther-Tech/go-ethereum/eth/gasprice"
+	"github.com/Onther-Tech/go-ethereum/ethdb"
+	"github.com/Onther-Tech/go-ethereum/ethstats"
+	"github.com/Onther-Tech/go-ethereum/graphql"
+	"github.com/Onther-Tech/go-ethereum/les"
+	"github.com/Onther-Tech/go-ethereum/log"
+	"github.com/Onther-Tech/go-ethereum/metrics"
+	"github.com/Onther-Tech/go-ethereum/metrics/influxdb"
+	"github.com/Onther-Tech/go-ethereum/miner"
+	"github.com/Onther-Tech/go-ethereum/node"
+	"github.com/Onther-Tech/go-ethereum/p2p"
+	"github.com/Onther-Tech/go-ethereum/p2p/discv5"
+	"github.com/Onther-Tech/go-ethereum/p2p/enode"
+	"github.com/Onther-Tech/go-ethereum/p2p/nat"
+	"github.com/Onther-Tech/go-ethereum/p2p/netutil"
+	"github.com/Onther-Tech/go-ethereum/params"
+	"github.com/Onther-Tech/go-ethereum/rpc"
+	whisper "github.com/Onther-Tech/go-ethereum/whisper/whisperv6"
 	pcsclite "github.com/gballet/go-libpcsclite"
 	cli "gopkg.in/urfave/cli.v1"
 )
@@ -291,6 +291,11 @@ var (
 		Name:  "dashboard.refresh",
 		Usage: "Dashboard metrics collection refresh rate",
 		Value: dashboard.DefaultConfig.Refresh,
+	}
+	// EccPoW settings
+	EccPoWFlag = cli.BoolFlag{
+		Name:  "eccpow",
+		Usage: "DeSecure Network with EccPoW",
 	}
 	// Ethash settings
 	EthashCacheDirFlag = DirectoryFlag{
@@ -1493,6 +1498,11 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 			cfg.NetworkId = 5
 		}
 		cfg.Genesis = core.DefaultGoerliGenesisBlock()
+	case ctx.GlobalBool(EccPoWFlag.Name):
+		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 7337
+		}
+		cfg.Genesis = core.EccGenesisBlock()
 	case ctx.GlobalBool(DeveloperFlag.Name):
 		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
 			cfg.NetworkId = 1337
@@ -1686,6 +1696,11 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 	var engine consensus.Engine
 	if config.Clique != nil {
 		engine = clique.New(config.Clique, chainDb)
+	} else if config.EccPoW != nil {
+		engine = eccpow.NewFaker()
+		if !ctx.GlobalBool(EccPoWFlag.Name) {
+			engine = eccpow.New(eccpow.Config{}, nil, false)
+		}
 	} else {
 		engine = ethash.NewFaker()
 		if !ctx.GlobalBool(FakePoWFlag.Name) {
