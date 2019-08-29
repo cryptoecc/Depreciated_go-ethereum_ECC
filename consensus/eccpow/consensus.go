@@ -508,9 +508,12 @@ func (ecc *ECC) verifySeal(chain consensus.ChainReader, header *types.Header, fu
 		nonce  int
 	)
 	nonce, digest = RunLDPC(header.ParentHash.Bytes(), ecc.SealHash(header).Bytes())
-	fmt.Println(nonce)
+
 	if !bytes.Equal(header.MixDigest[:], digest) {
 		return errInvalidMixDigest
+	}
+	if nonce < 0 {
+		return errInvalidPoW
 	}
 	//target := new(big.Int).Div(two256, header.Difficulty)
 	//if new(big.Int).SetBytes(result).Cmp(target) > 0 {
