@@ -30,10 +30,10 @@ import (
 	"github.com/Onther-Tech/go-ethereum/consensus/misc"
 	"github.com/Onther-Tech/go-ethereum/core/state"
 	"github.com/Onther-Tech/go-ethereum/core/types"
-	"github.com/Onther-Tech/go-ethereum/crypto/sha3"
 	"github.com/Onther-Tech/go-ethereum/params"
 	"github.com/Onther-Tech/go-ethereum/rlp"
 	"github.com/deckarep/golang-set"
+	"golang.org/x/crypto/sha3"
 )
 
 // ecc proof-of-work protocol constants.
@@ -241,20 +241,16 @@ func (ecc *ECC) verifyHeader(chain consensus.ChainReader, header, parent *types.
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), params.MaximumExtraDataSize)
 	}
 	// Verify the header's timestamp
-	if uncle {
-		if header.Time.Cmp(math.MaxBig256) > 0 {
-			return errLargeBlockTime
-		}
-	} else {
-		if header.Time.Cmp(big.NewInt(time.Now().Add(allowedFutureBlockTime).Unix())) > 0 {
+	if !uncle {
+		if header.Time > uint64(time.Now().Add(allowedFutureBlockTime).Unix()) {
 			return consensus.ErrFutureBlock
 		}
 	}
-	if header.Time.Cmp(parent.Time) <= 0 {
+	if header.Time <= parent.Time {
 		return errZeroBlockTime
 	}
 	// Verify the block's difficulty based in it's timestamp and parent's difficulty
-	expected := ecc.CalcDifficulty(chain, header.Time.Uint64(), parent)
+	expected := ecc.CalcDifficulty(chain, header.Time, parent)
 
 	if expected.Cmp(header.Difficulty) != 0 {
 		return fmt.Errorf("invalid difficulty: have %v, want %v", header.Difficulty, expected)
@@ -348,7 +344,7 @@ func makeDifficultyCalculator(bombDelay *big.Int) func(time uint64, parent *type
 		//        ) + 2^(periodCount - 2)
 
 		bigTime := new(big.Int).SetUint64(time)
-		bigParentTime := new(big.Int).Set(parent.Time)
+		bigParentTime := new(big.Int).SetUint64(parent.Time)
 
 		// holds intermediate values to make the algo easier to read & audit
 		x := new(big.Int)
@@ -407,7 +403,7 @@ func calcDifficultyHomestead(time uint64, parent *types.Header) *big.Int {
 	//        ) + 2^(periodCount - 2)
 
 	bigTime := new(big.Int).SetUint64(time)
-	bigParentTime := new(big.Int).Set(parent.Time)
+	bigParentTime := new(big.Int).SetUint64(parent.Time)
 
 	// holds intermediate values to make the algo easier to read & audit
 	x := new(big.Int)
@@ -455,7 +451,7 @@ func calcDifficultyFrontier(time uint64, parent *types.Header) *big.Int {
 	bigParentTime := new(big.Int)
 
 	bigTime.SetUint64(time)
-	bigParentTime.Set(parent.Time)
+	bigParentTime.SetUint64(parent.Time)
 
 	if bigTime.Sub(bigTime, bigParentTime).Cmp(params.DurationLimit) < 0 {
 		diff.Add(parent.Difficulty, adjust)
@@ -530,19 +526,16 @@ func (ecc *ECC) Prepare(chain consensus.ChainReader, header *types.Header) error
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
 	}
-	header.Difficulty = ecc.CalcDifficulty(chain, header.Time.Uint64(), parent)
+	header.Difficulty = ecc.CalcDifficulty(chain, header.Time, parent)
 	return nil
 }
 
 // Finalize implements consensus.Engine, accumulating the block and uncle rewards,
 // setting the final state and assembling the block.
-func (ecc *ECC) Finalize(chain consensus.ChainReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
+func (ecc *ECC) Finalize(chain consensus.ChainReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
-
-	// Header seems complete, assemble into a block and return
-	return types.NewBlock(header, txs, uncles, receipts), nil
 }
 
 func (ecc *ECC) FinalizeAndAssemble(chain consensus.ChainReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
@@ -556,7 +549,7 @@ func (ecc *ECC) FinalizeAndAssemble(chain consensus.ChainReader, header *types.H
 
 // SealHash returns the hash of a block prior to it being sealed.
 func (ecc *ECC) SealHash(header *types.Header) (hash common.Hash) {
-	hasher := sha3.NewKeccak256()
+	hasher := sha3.NewLegacyKeccak256()
 
 	rlp.Encode(hasher, []interface{}{
 		header.ParentHash,

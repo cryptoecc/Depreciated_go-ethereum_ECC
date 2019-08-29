@@ -2,7 +2,6 @@ package eccpow
 
 import (
 	"crypto/sha256"
-	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
@@ -368,18 +367,15 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte) {
 	var LDPCNonce uint32
 	var hashVector []int
 	var outputWord []int
-	//var LRrtl [][]float64
 
 	var currentBlockHeader string
 	var currentBlockHeaderWithNonce string
 
-	parameters := SetDifficultyUsingLevel(0)
+	parameters := SetDifficultyUsingLevel(1)
 	parameters.seed = GenerateSeed(prevHash)
 
 	H := GenerateH(parameters)
 	colInRow, rowInCol := GenerateQ(parameters, H)
-	//PrintQ(printRowInCol)
-	//PrintQ(printColInRow)
 
 	for {
 		//If Nonce is bigger than MaxNonce, then update timestamp
@@ -398,13 +394,11 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte) {
 			flag = MakeDecision(parameters, colInRow, outputWord)
 		}
 		if flag {
-			//fmt.Printf("Codeword is founded with nonce = %d\n", LDPCNonce)
 			break
 		}
 		LDPCNonce++
 	}
 
-	fmt.Println("done")
 	return int(LDPCNonce), crypto.Keccak256([]byte(currentBlockHeaderWithNonce))
 }
 

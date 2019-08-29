@@ -38,6 +38,7 @@ import (
 	"github.com/Onther-Tech/go-ethereum/common/fdlimit"
 	"github.com/Onther-Tech/go-ethereum/consensus"
 	"github.com/Onther-Tech/go-ethereum/consensus/clique"
+	"github.com/Onther-Tech/go-ethereum/consensus/eccpow"
 	"github.com/Onther-Tech/go-ethereum/consensus/ethash"
 	"github.com/Onther-Tech/go-ethereum/core"
 	"github.com/Onther-Tech/go-ethereum/core/vm"
