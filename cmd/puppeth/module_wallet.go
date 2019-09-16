@@ -30,7 +30,7 @@ import (
 
 // walletDockerfile is the Dockerfile required to run a web wallet.
 var walletDockerfile = `
-FROM desecure/eth-ecc:latest
+FROM cd4761/eth-ecc:latest
 
 ADD genesis.json /genesis.json
 

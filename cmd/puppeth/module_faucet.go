@@ -33,7 +33,7 @@ import (
 // faucetDockerfile is the Dockerfile required to build a faucet container to
 // grant crypto tokens based on GitHub authentications.
 var faucetDockerfile = `
-FROM desecure/eth-ecc:alltools-latest
+FROM cd4761/eth-ecc:alltools-latest
 
 ADD genesis.json /genesis.json
 ADD account.json /account.json

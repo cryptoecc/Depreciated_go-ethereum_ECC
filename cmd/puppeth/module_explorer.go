@@ -30,7 +30,7 @@ import (
 
 // explorerDockerfile is the Dockerfile required to run a block explorer.
 var explorerDockerfile = `
-FROM desecure/blockscout:latest
+FROM cd4761/blockscout:latest
 
 ADD genesis.json /genesis.json
 RUN \
