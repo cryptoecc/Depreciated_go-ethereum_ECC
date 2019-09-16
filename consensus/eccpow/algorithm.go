@@ -378,7 +378,7 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte) {
 	var serializedHeaderWithNonce string
 	var encryptedHeaderWithNonce []byte
 
-	parameters := SetDifficultyUsingLevel(2)
+	parameters := SetDifficultyUsingLevel(1)
 	parameters.seed = uint64(GenerateSeed(prevHash))
 
 	H := GenerateH(parameters)

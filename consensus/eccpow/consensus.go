@@ -32,7 +32,7 @@ import (
 	"github.com/Onther-Tech/go-ethereum/core/types"
 	"github.com/Onther-Tech/go-ethereum/params"
 	"github.com/Onther-Tech/go-ethereum/rlp"
-	"github.com/deckarep/golang-set"
+	mapset "github.com/deckarep/golang-set"
 	"golang.org/x/crypto/sha3"
 )
 
