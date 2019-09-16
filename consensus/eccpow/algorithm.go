@@ -5,15 +5,15 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	//"reflect"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/Onther-Tech/go-ethereum/crypto"
-
 	"github.com/Onther-Tech/go-ethereum/common"
 	"github.com/Onther-Tech/go-ethereum/consensus"
 	"github.com/Onther-Tech/go-ethereum/core/types"
+	"github.com/Onther-Tech/go-ethereum/crypto"
 	"github.com/Onther-Tech/go-ethereum/metrics"
 	"github.com/Onther-Tech/go-ethereum/rpc"
 )
@@ -48,7 +48,7 @@ type Mode uint
 
 const (
 	ModeNormal Mode = iota
-	ModeShared
+	//ModeShared
 	ModeTest
 	ModeFake
 	ModeFullFake
@@ -109,13 +109,22 @@ var (
 	sharedECC = New(Config{ModeNormal}, nil, false)
 )
 
+type verifyParameters struct {
+	n          uint64
+	m          uint64
+	wc         uint64
+	wr         uint64
+	seed       uint64
+	outputWord []uint64
+}
+
 //Parameters for matrix and seed
 type Parameters struct {
-	n    int
-	m    int
-	wc   int
-	wr   int
-	seed int
+	n    uint64
+	m    uint64
+	wc   uint64
+	wr   uint64
+	seed uint64
 }
 
 //const cross_err = 0.01
@@ -155,7 +164,7 @@ func SetDifficultyUsingLevel(level int) Parameters {
 		parameters.wc = 3
 		parameters.wr = 4
 	}
-	parameters.m = int(parameters.n * parameters.wc / parameters.wr)
+	parameters.m = uint64(parameters.n * parameters.wc / parameters.wr)
 
 	return parameters
 }
@@ -170,25 +179,22 @@ func GenerateSeed(phv []byte) int {
 }
 
 //Decoding carry out LDPC decoding. It returns hashVector and outputWord
-func Decoding(parameters Parameters,
-	hashVector []int,
-	H, rowInCol, colInRow [][]int,
-) ([]int, []int) {
+func Decoding(parameters Parameters, hashVector []int, H [][]int, rowInCol, colInRow [][]uint64) ([]int, []uint64) {
 	var temp3, tempSign, sign, magnitude float64
 
-	outputWord := make([]int, parameters.n)
+	outputWord := make([]uint64, parameters.n)
 	LRqtl := make([][]float64, parameters.n)
 	LRrtl := make([][]float64, parameters.n)
 	LRft := make([]float64, parameters.n)
 
-	for i := 0; i < parameters.n; i++ {
+	for i := 0; i < int(parameters.n); i++ {
 		LRqtl[i] = make([]float64, parameters.m)
 		LRrtl[i] = make([]float64, parameters.m)
-		LRft[i] = math.Log((1-crossErr)/crossErr) * float64((hashVector[i]*2 - 1))
+		LRft[i] = math.Log((1-crossErr)/crossErr) * float64(hashVector[i]*2-1)
 	}
 	LRpt := make([]float64, parameters.n)
 
-	var i, k, l, m, ind, t, mp int
+	var i, k, l, m, ind, t, mp uint64
 	for ind = 1; ind <= maxIter; ind++ {
 		for t = 0; t < parameters.n; t++ {
 			for m = 0; m < parameters.wc; m++ {
@@ -259,15 +265,15 @@ func GenerateH(parameters Parameters) [][]int {
 		H[i] = make([]int, parameters.n)
 	}
 
-	for i := 0; i < k; i++ {
-		for j := i * parameters.wr; j < (i+1)*parameters.wr; j++ {
+	for i := 0; i < int(k); i++ {
+		for j := i * int(parameters.wr); j < (i+1)*int(parameters.wr); j++ {
 			H[i][j] = 1
 		}
 	}
 
-	for i := 1; i < parameters.wc; i++ {
+	for i := 1; i < int(parameters.wc); i++ {
 		colOrder = nil
-		for j := 0; j < parameters.n; j++ {
+		for j := 0; j < int(parameters.n); j++ {
 			colOrder = append(colOrder, j)
 		}
 
@@ -277,8 +283,8 @@ func GenerateH(parameters Parameters) [][]int {
 		})
 		hSeed--
 
-		for j := 0; j < parameters.n; j++ {
-			index := colOrder[j]/parameters.wr + k*i
+		for j := 0; j < int(parameters.n); j++ {
+			index := colOrder[j]/int(parameters.wr) + int(k)*i
 			H[index][j] = 1
 		}
 	}
@@ -287,27 +293,27 @@ func GenerateH(parameters Parameters) [][]int {
 }
 
 //GenerateQ generate colInRow and rowInCol matrix using H matrix
-func GenerateQ(parameters Parameters, H [][]int) ([][]int, [][]int) {
-	colInRow := make([][]int, parameters.wr)
-	for i := 0; i < parameters.wr; i++ {
-		colInRow[i] = make([]int, parameters.m)
+func GenerateQ(parameters Parameters, H [][]int) ([][]uint64, [][]uint64) {
+	colInRow := make([][]uint64, parameters.wr)
+	for i := 0; i < int(parameters.wr); i++ {
+		colInRow[i] = make([]uint64, parameters.m)
 	}
 
-	rowInCol := make([][]int, parameters.wc)
-	for i := 0; i < parameters.wc; i++ {
-		rowInCol[i] = make([]int, parameters.n)
+	rowInCol := make([][]uint64, parameters.wc)
+	for i := 0; i < int(parameters.wc); i++ {
+		rowInCol[i] = make([]uint64, parameters.n)
 	}
 
 	rowIndex := 0
 	colIndex := 0
 
-	for i := 0; i < parameters.m; i++ {
-		for j := 0; j < parameters.n; j++ {
+	for i := 0; i < int(parameters.m); i++ {
+		for j := 0; j < int(parameters.n); j++ {
 			if H[i][j] == 1 {
-				colInRow[colIndex%parameters.wr][i] = j
+				colInRow[colIndex%int(parameters.wr)][i] = uint64(j)
 				colIndex++
 
-				rowInCol[rowIndex/parameters.n][j] = i
+				rowInCol[rowIndex/int(parameters.n)][j] = uint64(i)
 				rowIndex++
 			}
 		}
@@ -336,7 +342,7 @@ func GenerateHv(parameters Parameters, headerWithNonce []byte) []int {
 		transform the constructed hexadecimal array into an binary array
 		ex) FE01 => 11111110000 0001
 	*/
-	for i := 0; i < parameters.n/8; i++ {
+	for i := 0; i < int(parameters.n)/8; i++ {
 		decimal := int(tmpHashVector[i])
 		for j := 7; j >= 0; j-- {
 			hashVector[j+8*(i)] = decimal % 2
@@ -349,12 +355,12 @@ func GenerateHv(parameters Parameters, headerWithNonce []byte) []int {
 }
 
 //MakeDecision check outputWord is valid or not using colInRow
-func MakeDecision(parameters Parameters, colInRow [][]int, outputWord []int) bool {
-	for i := 0; i < parameters.m; i++ {
+func MakeDecision(parameters Parameters, colInRow [][]uint64, outputWord []uint64) bool {
+	for i := 0; i < int(parameters.m); i++ {
 		sum := 0
-		for j := 0; j < parameters.wr; j++ {
+		for j := 0; j < int(parameters.wr); j++ {
 			//	fmt.Printf("i : %d, j : %d, m : %d, wr : %d \n", i, j, m, wr)
-			sum = sum + outputWord[colInRow[j][i]]
+			sum = sum + int(outputWord[colInRow[j][i]])
 		}
 		if sum%2 == 1 {
 			return false
@@ -366,13 +372,14 @@ func MakeDecision(parameters Parameters, colInRow [][]int, outputWord []int) boo
 func RunLDPC(prevHash []byte, curHash []byte) (int, []byte) {
 	var LDPCNonce uint32
 	var hashVector []int
-	var outputWord []int
+	var outputWord []uint64
 
 	var currentBlockHeader string
-	var currentBlockHeaderWithNonce string
+	var serializedHeaderWithNonce string
+	var encryptedHeaderWithNonce []byte
 
-	parameters := SetDifficultyUsingLevel(1)
-	parameters.seed = GenerateSeed(prevHash)
+	parameters := SetDifficultyUsingLevel(2)
+	parameters.seed = uint64(GenerateSeed(prevHash))
 
 	H := GenerateH(parameters)
 	colInRow, rowInCol := GenerateQ(parameters, H)
@@ -383,9 +390,10 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte) {
 			LDPCNonce = 0
 			currentBlockHeader = string(curHash)
 		}
-		currentBlockHeaderWithNonce = currentBlockHeader + strconv.FormatUint(uint64(LDPCNonce), 10)
+		serializedHeaderWithNonce = currentBlockHeader + strconv.FormatUint(uint64(LDPCNonce), 10)
+		encryptedHeaderWithNonce = crypto.Keccak256([]byte(serializedHeaderWithNonce))
 
-		hashVector = GenerateHv(parameters, []byte(currentBlockHeaderWithNonce))
+		hashVector = GenerateHv(parameters, []byte(encryptedHeaderWithNonce))
 		hashVector, outputWord = Decoding(parameters, hashVector, H, rowInCol, colInRow)
 		flag := MakeDecision(parameters, colInRow, outputWord)
 
@@ -399,7 +407,16 @@ func RunLDPC(prevHash []byte, curHash []byte) (int, []byte) {
 		LDPCNonce++
 	}
 
-	return int(LDPCNonce), crypto.Keccak256([]byte(currentBlockHeaderWithNonce))
+	//data, err := rlp.EncodeToBytes([]interface{} {
+	//	parameters.n,
+	//	parameters.m,
+	//	parameters.wc,
+	//	parameters.wr,
+	//	parameters.seed,
+	//	outputWord,
+	//})
+
+	return int(LDPCNonce), encryptedHeaderWithNonce
 }
 
 //func isRegular(nSize, wCol, wRow int) bool {
@@ -542,9 +559,9 @@ func NewFullFaker() *ECC {
 
 // NewShared creates a full sized ethash PoW shared between all requesters running
 // in the same process.
-func NewShared() *ECC {
-	return &ECC{shared: sharedECC}
-}
+//func NewShared() *ECC {
+//	return &ECC{shared: sharedECC}
+//}
 
 // Close closes the exit channel to notify all backend threads exiting.
 func (ecc *ECC) Close() error {

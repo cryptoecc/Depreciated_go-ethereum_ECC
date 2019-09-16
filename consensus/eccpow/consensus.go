@@ -74,6 +74,15 @@ var (
 	errInvalidPoW        = errors.New("invalid proof-of-work")
 )
 
+type Data struct {
+	n          uint64
+	m          uint64
+	wc         uint64
+	wr         uint64
+	seed       uint64
+	outputWord []uint64
+}
+
 // Author implements consensus.Engine, returning the header's coinbase as the
 // proof-of-work verified author of the block.
 func (ecc *ECC) Author(header *types.Header) (common.Address, error) {
@@ -507,6 +516,12 @@ func (ecc *ECC) verifySeal(chain consensus.ChainReader, header *types.Header, fu
 		digest []byte
 		nonce  int
 	)
+	//VerifyDecoding()
+	vParameter := &verifyParameters{}
+
+	rlp.DecodeBytes(header.Extra, vParameter)
+	//VerifyDecoding(Parameters{},vParameter.outputWord, header.Nonce.Uint64(), header.ParentHash.Bytes())
+
 	nonce, digest = RunLDPC(header.ParentHash.Bytes(), ecc.SealHash(header).Bytes())
 
 	if !bytes.Equal(header.MixDigest[:], digest) {
@@ -515,6 +530,8 @@ func (ecc *ECC) verifySeal(chain consensus.ChainReader, header *types.Header, fu
 	if nonce < 0 {
 		return errInvalidPoW
 	}
+
+	//ToDo: replace target
 	//target := new(big.Int).Div(two256, header.Difficulty)
 	//if new(big.Int).SetBytes(result).Cmp(target) > 0 {
 	//	return errInvalidPoW

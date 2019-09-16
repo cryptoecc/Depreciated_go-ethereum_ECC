@@ -169,7 +169,6 @@ search:
 
 		// Correct nonce found, create a new header with it
 		header = types.CopyHeader(header)
-		//header.Nonce = types.EncodeNonce(nonce)
 		header.MixDigest = common.BytesToHash(digest)
 		header.Nonce = types.EncodeNonce(uint64(nonce))
 
